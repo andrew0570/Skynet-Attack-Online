@@ -69,8 +69,8 @@ export const STAMINA = {
   /** Seconds after spending stamina (or while sprinting) before it regenerates. */
   regenDelay: 0.5,
   sprintDrain: 20,
-  jumpCost: 10,
-  airJumpCost: 16,
+  jumpCost: 15,
+  airJumpCost: 15,
   dashCost: 22,
 };
 

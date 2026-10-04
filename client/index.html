@@ -36,8 +36,6 @@
       #player-hud .stamina .bar { height: 6px; }
       #player-hud .stamina.low .label { animation: blink 0.4s steps(2) infinite; }
       @keyframes blink { 50% { opacity: 0.3; } }
-      #dash { position: fixed; left: 50%; bottom: 28px; width: 160px; height: 6px; transform: translateX(-50%); background: rgba(255,255,255,0.15); border-radius: 3px; overflow: hidden; }
-      #dash-fill { height: 100%; width: 100%; background: #00e5ff; }
       #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(0,229,255,0.85); box-shadow: 0 0 6px #00e5ff; pointer-events: none; }
       #vignette { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(255,20,0,0.65) 100%); }
       #result { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(10,4,3,0.6); transition: opacity 0.4s; pointer-events: none; }
@@ -70,7 +68,6 @@
       <p>Push into glowing vines to climb · Amber walls shift · Walls block bolts, not mortars · R restart · Esc release mouse</p>
       <p class="start">Click to engage</p>
     </div>
-    <div id="dash"><div id="dash-fill"></div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

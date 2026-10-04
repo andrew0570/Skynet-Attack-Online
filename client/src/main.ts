@@ -12,7 +12,6 @@ import {
   heuristicBrain,
   lerp,
   NO_INPUT,
-  PLAYER,
   raycast,
   SIM_DT,
   STAMINA,
@@ -81,7 +80,6 @@ const input = new Input(renderer.domElement);
 const el = (id: string) => document.getElementById(id)!;
 const ui = {
   hud: el('hud'),
-  dash: el('dash-fill'),
   bossHp: el('boss-hp'),
   bossEnergy: el('boss-energy'),
   bossState: el('boss-state'),
@@ -220,7 +218,6 @@ renderer.setAnimationLoop(() => {
   // HUD
   const b = fight.boss;
   ui.hud.classList.toggle('hidden', input.locked || params.has('shot'));
-  ui.dash.style.width = `${(1 - player.dashCooldown / PLAYER.dashCooldown) * 100}%`;
   ui.bossHp.style.width = `${(b.hp / BOSS.maxHp) * 100}%`;
   ui.bossEnergy.style.width = `${(b.energy / BOSS.maxEnergy) * 100}%`;
   const arm = b.arm >= 0 ? ARMS[b.arm] : null;

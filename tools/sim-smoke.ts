@@ -132,7 +132,7 @@ const dLand = firstLanding(downDash.frames, 21);
 check('down-dash slams and ends on landing', dLand > 0 && dLand < 30 && !downDash.frames[dLand].dashing, `landed tick ${dLand}`);
 // Stamina: no fixed air-jump/air-dash charges — everything is paid for with stamina.
 const airJumps = sim(150, t => ({ jump: t % 25 === 0 }));
-check('air jumps chain until stamina runs out (10 + 5×16 = 90)', airJumps.p.airJumpCount === 5, `${airJumps.p.airJumpCount} air jumps`);
+check('air jumps chain until stamina runs out (15 + 5×15 = 90)', airJumps.p.airJumpCount === 5, `${airJumps.p.airJumpCount} air jumps`);
 let dashesStarted = 0;
 sim(140, (t, p) => {
   if (p.dashTimer > PLAYER.dashTime - SIM_DT * 1.5) dashesStarted++;
@@ -146,7 +146,7 @@ const regen = sim(60 * 4, () => ({}), { setup: p => (p.stamina = 0) });
 check('stamina regenerates to full within ~4 s', regen.p.stamina === STAMINA.max, `${regen.p.stamina.toFixed(1)}`);
 // Long airtime (dropped from 1500 m, mashing jump every 0.42 s): one bar of stamina, no refills.
 const skyfall = sim(60 * 7, t => ({ jump: t % 25 === 0 }), { setup: p => { p.pos.y += 1500; p.onGround = false; } });
-check('no stamina regen in the air: jumps end when the bar does (6 × 16)', skyfall.p.airJumpCount === 6 && !skyfall.p.onGround && skyfall.p.stamina < STAMINA.airJumpCost,
+check('no stamina regen in the air: jumps end when the bar does (6 × 15)', skyfall.p.airJumpCount === 6 && !skyfall.p.onGround && skyfall.p.stamina < STAMINA.airJumpCost,
   `${skyfall.p.airJumpCount} air jumps over 7 s airborne, stamina ${skyfall.p.stamina.toFixed(1)}`);
 const glideRegen = sim(60 * 4, () => ({ glide: true }), { setup: p => { p.pos.y += 200; p.onGround = false; p.stamina = 0; } });
 check('no stamina regen while gliding', glideRegen.p.stamina === 0 && !glideRegen.p.onGround);
