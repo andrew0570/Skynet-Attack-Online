@@ -31,6 +31,8 @@ export class Input {
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.target;
       if (!this.locked) this.held.clear();
+      // Playing: nothing in the page UI (a button just clicked) should keep keyboard focus.
+      else (document.activeElement as HTMLElement | null)?.blur();
     });
     document.addEventListener('mousemove', e => {
       if (!this.locked) return;

@@ -50,6 +50,34 @@
       #start button { font: inherit; font-weight: 800; letter-spacing: 0.18em; padding: 13px 16px; border-radius: 6px; border: 0; background: var(--accent); color: #041014; cursor: pointer; }
       #start button:disabled { background: rgba(255,255,255,0.12); color: #8a7a75; cursor: not-allowed; }
       #start button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+      /* Raid: lobby, team panel, teammate nameplates */
+      #lobby { position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; padding: 24px 16px; background: rgba(8,3,2,0.8); transition: opacity 0.2s; }
+      #lobby .card { width: min(460px, 100%); display: grid; gap: 14px; padding: 22px 24px; background: #120a08; border: 1px solid #ff3b1f; border-radius: 10px; box-shadow: 0 0 30px rgba(255,40,10,0.3); }
+      #lobby h2 { margin: 0; color: #ff5a3c; letter-spacing: 0.16em; }
+      #lobby .sub { margin: -6px 0 0; color: #d9b8ae; font-size: 0.88rem; line-height: 1.45; }
+      #lobby-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+      #lobby-list li { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 6px; background: rgba(255,255,255,0.04); font-size: 0.92rem; }
+      #lobby-list li i { width: 12px; height: 12px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); flex: none; }
+      #lobby-list li.bot { color: #8a7a75; font-style: italic; }
+      #lobby-list li.bot i { background: #4a4240; box-shadow: none; }
+      #lobby-list li .you { margin-left: auto; font-size: 0.7rem; letter-spacing: 0.16em; color: #9feaff; }
+      #lobby .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+      #lobby button { flex: 1; font: inherit; font-weight: 800; letter-spacing: 0.14em; padding: 11px 14px; border-radius: 6px; border: 1px solid #00e5ff; background: #00e5ff; color: #041014; cursor: pointer; }
+      #lobby button.secondary { background: transparent; color: #9feaff; }
+      #lobby button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+      #team { position: fixed; right: 18px; bottom: 22px; width: 220px; display: grid; gap: 6px; pointer-events: none; font-size: 0.72rem; }
+      #team .t { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 9px; border-radius: 6px; background: rgba(12,5,4,0.6); }
+      #team .t b { letter-spacing: 0.08em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #team .t span { color: #b39a92; font-variant-numeric: tabular-nums; }
+      #team .t .bar { grid-column: 1 / -1; height: 4px; }
+      #team .t .bar > div { background: linear-gradient(90deg, #e0301e, #ff7a5a); }
+      #team .t.down { opacity: 0.45; }
+      #team .title { font-size: 0.62rem; letter-spacing: 0.22em; color: #ff8f73; font-weight: 700; }
+      #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      .nameplate { position: absolute; left: 0; top: 0; display: grid; gap: 3px; justify-items: center; font-size: 0.72rem; letter-spacing: 0.1em; text-shadow: 0 0 6px #000, 0 0 2px #000; white-space: nowrap; }
+      .nameplate i { display: block; width: 46px; height: 3px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
+      .nameplate s { display: block; height: 100%; background: #ff6a4a; }
+      .nameplate.down { opacity: 0.5; }
       #player-name { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.22em; color: var(--accent, #00e5ff); text-shadow: 0 0 8px var(--accent, #00e5ff); min-height: 1em; }
       #boss-energy-bar { height: 4px; margin-top: 4px; }
       #boss-energy { background: #ffb020; }
@@ -187,6 +215,19 @@
         so Skynet picked at random.</div>
       </div>
     </div>
+    <div id="labels"></div>
+    <div id="team" class="hidden"></div>
+    <div id="lobby" class="hidden">
+      <div class="card">
+        <h2>RAID LOBBY</h2>
+        <p class="sub" id="lobby-sub">Start whenever you're ready. Empty slots are filled with bots, and Skynet's HP grows with the team.</p>
+        <ul id="lobby-list"></ul>
+        <div class="buttons">
+          <button type="button" id="lobby-start">Start raid</button>
+          <button type="button" id="lobby-leave" class="secondary">Back to solo</button>
+        </div>
+      </div>
+    </div>
     <div id="vignette"></div>
     <div id="static"></div>
     <div id="result" class="hidden"><h1 id="result-title"></h1><p id="result-note"></p><p>Press R to fight again</p></div>
@@ -199,11 +240,15 @@
           <input type="text" id="start-name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Resistance fighter" />
         </label>
         <fieldset class="field"><legend>ARMOR COLOR</legend><div class="swatches" id="start-colors"></div></fieldset>
+        <fieldset class="field"><legend>MODE</legend>
+          <label class="choice"><input type="radio" name="mode" id="mode-solo" value="solo" checked /><span><b>Solo</b>Face Skynet alone. With your permission, your fights help train it.</span></label>
+          <label class="choice"><input type="radio" name="mode" id="mode-raid" value="raid" /><span><b>Raid</b>Join the open raid lobby with up to 4 others. Empty slots are filled with bots. Skynet runs live on the server and fights the whole team.</span></label>
+        </fieldset>
         <fieldset class="field"><legend>TRAINING DATA</legend>
           <label class="choice"><input type="radio" name="consent" id="consent-yes" value="yes" /><span><b>Help train Skynet</b>The situations Skynet saw in your fights (positions, movement, health, cooldowns) and how its attacks turned out are sent anonymously to train the shared AI. No personal information.</span></label>
           <label class="choice"><input type="radio" name="consent" id="consent-no" value="no" /><span><b>Just fight</b>Nothing from your fights is used for training.</span></label>
         </fieldset>
-        <p class="fine">Your callsign and color only live in this browser tab. They are never sent or saved.</p>
+        <p class="fine" id="start-fine">Your callsign and color only live in this browser tab. They are never sent or saved.</p>
         <button type="submit" id="start-go" disabled>Choose a training option</button>
       </form>
     </div>

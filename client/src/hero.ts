@@ -233,6 +233,34 @@ interface Pose {
   thrust: number;
 }
 
+/**
+ * Give one hero (a raid teammate) its own glow color: its accent materials are replaced with
+ * tinted copies, so it no longer follows the local player's color.
+ */
+export function tintHero(hero: Hero, hex: string): void {
+  const color = new THREE.Color(hex);
+  const white = new THREE.Color(1, 1, 1);
+  const k = new Map<THREE.Material, number>(ACCENTED.map(({ mat, k }) => [mat, k]));
+  const clones = new Map<THREE.Material, THREE.Material>();
+  const swap = (obj: THREE.Object3D) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mat = mesh.material as THREE.MeshBasicMaterial;
+    if (!k.has(mat) && mat !== BLADE_CORE && mat !== FLAME) return;
+    let c = clones.get(mat) as THREE.MeshBasicMaterial | undefined;
+    if (!c) {
+      c = mat.clone();
+      if (mat === BLADE_CORE) c.color.copy(white).lerp(color, 0.3).multiplyScalar(2.2);
+      else if (mat === FLAME) c.color.copy(color).lerp(white, 0.35).multiplyScalar(4);
+      else c.color.copy(color).multiplyScalar(k.get(mat)!);
+      clones.set(mat, c);
+    }
+    mesh.material = c;
+  };
+  hero.group.traverse(swap);
+  hero.worldFx.traverse(swap);
+}
+
 /** Recolor the hero's glowing armor seams, visor, wings, and laser sword (cosmetic only). */
 export function setHeroColor(hex: string): void {
   CYAN.set(hex);

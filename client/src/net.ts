@@ -1,5 +1,6 @@
 import { ARMS, FEATURE_DIM, type FightSubmission, type Policy } from '@sao/sim';
 import { DbConnection } from './module_bindings';
+import type { Raid, RaidMember } from './module_bindings/types';
 
 // Connection to Skynet's shared brain in SpacetimeDB. The game keeps working offline (it falls
 // back to the local placeholder AI); online, every fight uses the community-trained weights.
@@ -19,25 +20,42 @@ export interface BrainStatus {
   consented: boolean | null;
 }
 
+/** Co-op raid: the server runs the fight; this client streams its hero and reports its hits. */
+export interface RaidLink {
+  join(name: string, color: string): void;
+  leave(): void;
+  start(): void;
+  /** This player's movement/animation state (JSON) and skills used since the last update. */
+  update(state: string, skillsUsed: number): void;
+  hit(amount: number, source: string): void;
+  /** My member row, my raid, and everyone in it. */
+  me(): RaidMember | undefined;
+  current(): Raid | undefined;
+  members(): RaidMember[];
+}
+
 export interface BrainLink {
   status: BrainStatus;
+  raid: RaidLink;
   /** A fresh copy of the current shared policy (freeze it for a fight), or null if unavailable. */
   snapshotPolicy(): Policy | null;
   setConsent(consented: boolean): void;
   submit(sub: FightSubmission): void;
 }
 
+// The identity token is per tab (sessionStorage): two tabs are two players, and a reload keeps
+// the same player. Consent is re-sent from the start screen on every load.
 const storage = {
   get(key: string): string | undefined {
     try {
-      return localStorage.getItem(key) ?? undefined;
+      return sessionStorage.getItem(key) ?? undefined;
     } catch {
       return undefined;
     }
   },
   set(key: string, value: string): void {
     try {
-      localStorage.setItem(key, value);
+      sessionStorage.setItem(key, value);
     } catch {
       /* private mode etc. — identity just won't persist */
     }
@@ -75,7 +93,7 @@ export function connectBrain(onChange: () => void): BrainLink {
         status.connected = true;
         c.subscriptionBuilder()
           .onApplied(refresh)
-          .subscribe(['SELECT * FROM policy_meta', 'SELECT * FROM policy_arm', 'SELECT * FROM player']);
+          .subscribe(['SELECT * FROM policy_meta', 'SELECT * FROM policy_arm', 'SELECT * FROM player', 'SELECT * FROM raid', 'SELECT * FROM raid_member']);
         c.db.policyMeta.onUpdate(refresh);
         c.db.policyMeta.onInsert(refresh);
         c.db.player.onUpdate(refresh);
@@ -96,8 +114,27 @@ export function connectBrain(onChange: () => void): BrainLink {
     console.warn('[brain] could not connect:', err);
   }
 
+  const me = () => (conn && identityHex ? [...conn.db.raidMember.iter()].find(m => m.owner === identityHex) : undefined);
+  const raid: RaidLink = {
+    join: (name, color) => conn?.reducers.raidJoin({ name, color }),
+    leave: () => conn?.reducers.raidLeave({}),
+    start: () => conn?.reducers.raidStart({}),
+    update: (state, skillsUsed) => conn?.reducers.raidUpdate({ state, skillsUsed }),
+    hit: (amount, source) => conn?.reducers.raidHit({ amount, source }),
+    me,
+    current: () => {
+      const m = me();
+      return m && conn ? conn.db.raid.id.find(m.raidId) ?? undefined : undefined;
+    },
+    members: () => {
+      const m = me();
+      return m && conn ? [...conn.db.raidMember.iter()].filter(x => x.raidId === m.raidId).sort((a, b) => a.slot - b.slot || Number(a.id - b.id)) : [];
+    },
+  };
+
   return {
     status,
+    raid,
     snapshotPolicy() {
       if (!conn || !status.connected) return null;
       const rows = [...conn.db.policyArm.iter()].sort((a, b) => a.arm - b.arm);

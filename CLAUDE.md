@@ -60,13 +60,12 @@ Design details and reasoning: [docs/design.md](docs/design.md).
 4. Show a live "Skynet brain" panel: fights learned from, how its move preferences have
    shifted, and how it has adapted to common player habits.
 
-### Multiplayer
-Single-player first (tonight). Multiplayer is a **high-value stretch for Sunday morning** —
-it fits the "community unites against Skynet" theme. Two tiers, in order:
-1. **Global Resistance** (cheap): a shared Skynet "core integrity" pool in SpacetimeDB; every
-   player's damage in their own fight drains it live, and everyone sees the bar and a feed.
-2. **Co-op raid** (expensive): players share one arena; Skynet runs server-side in a scheduled
-   reducer using the same `sim/` code. Only if M1–M5 are done.
+### Multiplayer (built: co-op raid)
+Solo or **Raid** on the start screen. Raid: open lobby (up to 5 humans), anyone starts, empty
+slots fill with server-run bots. SpacetimeDB is the game server: the scheduled `run_raids`
+reducer (20 Hz) steps Skynet, projectiles, bots, and damage with the shared `sim/` code and
+the learned brain; clients stream their own movement (`raid_update`) and report their hits
+(`raid_hit`, validated server-side). Details: docs/design.md §8. Raids don't train the brain.
 
 ### Milestones
 Schedule and done-criteria: [docs/milestones.md](docs/milestones.md).
@@ -148,6 +147,8 @@ Run from the repo root after `. .\env.ps1`:
 | `npm run build` | Type-check (client + sim) + production build of the client |
 | `npm run sim:smoke` | Headless movement checks for `sim/` (run after touching `sim/`) |
 | `npm run test:browser` | Drives the real client in headless Edge (needs `npm run dev`). `SAO_SLOW_CLOCK=1` simulates a high-refresh display; `SAO_SKILLS=1` tests skills; `SAO_BRAIN=1` tests the full learning loop (needs the DB); `SAO_URL` overrides the page |
+| `npx tsx tools/raid-smoke.ts` | Raid end-to-end against the local DB: join, start (bot fill), server tick, leave |
+| `npx tsx tools/raid-browser-test.ts [dir]` | Two real clients raid together (needs `npm run dev` + DB): lobby, team, movement sync, hit reports |
 | `npx tsx tools/db-smoke.ts` | End-to-end brain test against the local DB: consent, validation, rate limit, training |
 | `npm run train:bots` | Bot training through the real server (`RUNS`, `BACKUP_EVERY`, `ROUND` env; defaults 250 / 50) |
 | `npx tsx tools/train-offline.ts 300` | Dry-run bots vs a local brain (no DB): per-style habits, wins, move mix — run before a real round after changing moves/bots |

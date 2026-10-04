@@ -67,6 +67,11 @@ Skynet doesn't just aim better over time; it learns to counter **how you play**:
   because you hide in cover". Hold Tab to see what the community has taught it: its best
   moves against each kind of player, next to the untrained version that picked at random.
 
+**Raid mode** puts the whole idea on one screen: up to five fighters (empty slots are
+filled with bots) take on one Skynet together, live. The fight runs inside the database:
+SpacetimeDB steps Skynet, its attacks, and the bots twenty times a second using the same game
+code as solo play, and every player sees every teammate, attack, and hit in real time.
+
 The longer people play, the harder Skynet gets. Beating it takes a community, not a single
 hero.
 
@@ -93,6 +98,11 @@ hero.
 - **Backend:** [SpacetimeDB](https://spacetimedb.com/) stores the boss's brain, the fight
   history, and the training data. Every fight log is checked on the server before it can
   change the model, and every player stays in sync with the latest version.
+- **Multiplayer:** SpacetimeDB is also the raid's game server. A scheduled reducer runs each
+  raid's Skynet, projectiles, bots, and damage at 20 Hz (about 2 ms per tick), with the shared
+  learned brain choosing Skynet's moves. Players stream their movement and report their hits;
+  the server validates every hit (damage per source, range, and a damage budget) before it
+  counts.
 
 ## Challenges we ran into
 

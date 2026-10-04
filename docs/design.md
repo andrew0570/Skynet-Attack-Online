@@ -269,7 +269,32 @@ shared integrity; clients subscribe and show a live global bar + feed ("Pilot 3f
 When integrity hits 0, Skynet is "defeated" community-wide and respawns stronger (next policy
 snapshot). Reuses the single-player architecture; ~45 min.
 
-**Tier 2 — Co-op raid.** Tables `raid { id, state }`, `raid_player { identity, raidId, pos,
+**Built (Sun ~5:30 AM): Co-op raid** — see below. Tier 1 was skipped.
+
+**As built:** Solo/Raid on the start screen. Raid quick-joins the open lobby (up to 5 humans);
+any member presses Start and the empty slots fill with server-run bots (the same scripted
+styles that trained Skynet; `sim/src/bots.ts`). SpacetimeDB is the game server:
+- `raid` row: status (lobby/active/won/lost), boss HP, the brain version, `sim` (the whole
+  RaidSim as JSON, ~12 KB) and `events` (the last tick's VFX events).
+- `raid_member` rows: callsign, color (kept only while in the raid), bot flag, `state`
+  (movement/animation JSON), queued `hits`, health/armor/dead, damage dealt.
+- `raid_tick` scheduled table → `run_raids` reducer at 20 Hz: applies each human's streamed
+  state and queued hit reports, then 3 sim steps of `stepRaid` (`sim/src/raid.ts`): bots act,
+  Skynet picks a target (nearest visible member, re-checked every 3 s) and acts with the shared
+  learned brain (v1500, cached by version), its projectiles can hit anyone, deaths settle.
+  ~1.9 ms per tick. Raids don't train the brain.
+- Clients (`client/src/raidClient.ts`): move their own hero locally (`stepFight` with no
+  brain), stream it with `raid_update` ~20×/s, report their own hits with `raid_hit` (base
+  damage + source; the server validates per-source max, range, and a damage budget, then applies
+  stun bonus and Reflect Shield), and render Skynet/projectiles/teammates from the subscribed
+  tables (boss smoothed, projectiles dead-reckoned between ticks, teammates tinted with
+  nameplates). Boss HP = 1600 × (1 + 0.6 × (members − 1)) → 5440 for a full team.
+- The single-player rules are reused by "player slots": each member's per-player FightState
+  fields are loaded into the fight before acting (`loadSlot`/`saveSlot` in combat.ts).
+- Identity is per browser tab (token in sessionStorage), so two tabs are two raiders.
+- Tests: `tools/raid-smoke.ts` (DB), `tools/raid-browser-test.ts` (two real clients).
+
+**Original Tier 2 plan.** Tables `raid { id, state }`, `raid_player { identity, raidId, pos,
 vel, yaw, hp, action }`, `raid_boss { raidId, pos, hp, move, moveStartedAt }`, plus a scheduled
 `raid_tick` reducer (~20 Hz) that imports `sim/` and steps Skynet server-side. Players send
 inputs/positions ~20 Hz (sanity-checked); clients interpolate others and Skynet; all damage

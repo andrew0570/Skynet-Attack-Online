@@ -86,6 +86,12 @@ Skynet wins 16% → 45% (first vs last 150); bot wins 26 → 7 of 150 (round 3 b
 rest are 120 s timeouts, ~half of fights reach phase 2. Last 300 fights: waits 20%, moves
 26%, 10 moves in regular use, top move 11%.
 
+## M7 — Co-op raid · ~5:15 → 5:40 AM ✅ (moved up; Global Resistance skipped)
+Solo/Raid start-screen toggle, open lobby (up to 5, anyone starts, bots always fill to 5),
+server-authoritative raid in SpacetimeDB (scheduled `run_raids` at 20 Hz, ~1.9 ms/tick, ~12 KB
+state), client streaming + validated hit reports, tinted teammates with nameplates, team panel.
+Verified with `tools/raid-smoke.ts` and a two-browser test. Deploy next.
+
 ## Sleep · ~3:30 → 8:00 AM
 
 ---

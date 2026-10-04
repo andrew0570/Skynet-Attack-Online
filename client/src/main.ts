@@ -40,6 +40,7 @@ import {
 } from '@sao/sim';
 import { createArenaMeshes } from './arenaMesh';
 import { connectBrain } from './net';
+import { createRaidClient } from './raidClient';
 import { ThirdPersonCamera } from './camera';
 import { createCombatFx } from './combatFx';
 import { createHero, setHeroColor } from './hero';
@@ -139,6 +140,11 @@ const ui = {
   learned: el('learned'),
   learnedSub: el('learned-sub'),
   learnedRows: el('learned-rows'),
+  lobby: el('lobby'),
+  lobbyList: el('lobby-list'),
+  lobbySub: el('lobby-sub'),
+  team: el('team'),
+  startFine: el('start-fine'),
 };
 
 // ---- Showing the learning: style read, decision reasons, counter-move callouts ----
@@ -269,12 +275,16 @@ const startForm = el('start-form') as HTMLFormElement;
 const startName = el('start-name') as HTMLInputElement;
 const startGo = el('start-go') as HTMLButtonElement;
 let playerName = '';
+let playerColor = '#00e5ff';
+/** Solo (local Skynet, trains the brain) or Raid (server-run Skynet vs the whole team). */
+let mode: 'solo' | 'raid' = 'solo';
 /** null until the start screen is answered (also null in test modes: never submits). */
 let consentChoice: boolean | null = null;
 let lastConsentSync = -Infinity;
 el('start-colors').innerHTML = ARMOR_COLORS.map(([name, hex], i) =>
   `<label class="swatch" title="${name}"><input type="radio" name="color" value="${hex}" aria-label="${name}"${i === 0 ? ' checked' : ''} /><i style="--c:${hex}"></i></label>`).join('');
 function applyColor(hex: string): void {
+  playerColor = hex;
   setHeroColor(hex);
   startScreen.style.setProperty('--accent', hex);
   ui.playerName.style.setProperty('--accent', hex);
@@ -282,6 +292,11 @@ function applyColor(hex: string): void {
 startForm.addEventListener('change', e => {
   const t = e.target as HTMLInputElement;
   if (t.name === 'color') applyColor(t.value);
+  if (t.name === 'mode') {
+    ui.startFine.textContent = t.value === 'raid'
+      ? 'In a raid, your callsign and color are shown to your team. They are deleted from the server when you leave.'
+      : 'Your callsign and color only live in this browser tab. They are never sent or saved.';
+  }
   if (t.name === 'consent') {
     startGo.disabled = false;
     startGo.textContent = 'Enter the arena';
@@ -295,7 +310,11 @@ startForm.addEventListener('submit', e => {
   playerName = startName.value.trim().slice(0, 16) || 'Resistance fighter';
   ui.playerName.textContent = playerName.toUpperCase();
   startScreen.classList.add('hidden');
-  startGo.blur();
+  // Leave the form entirely (Enter in the callsign field would otherwise keep keys there,
+  // and keys typed into form fields don't reach the game).
+  (document.activeElement as HTMLElement | null)?.blur();
+  mode = startForm.querySelector<HTMLInputElement>('input[name="mode"]:checked')?.value === 'raid' ? 'raid' : 'solo';
+  if (mode === 'raid') joinRaid();
 });
 // Tests and screenshots skip the start screen.
 if (params.has('autoplay') || params.has('shot')) startScreen.classList.add('hidden');
@@ -313,6 +332,50 @@ const [spawnX, spawnZ] = params.get('at')?.split(',').map(Number) ?? [arena.spaw
 // is submitted for training when it ends. Offline, the local placeholder AI takes over.
 const net = connectBrain(() => {});
 const peace: Brain = () => 0; // ?peace: always "wait"
+const raidClient = createRaidClient(scene, net, el('labels'));
+let raidWasActive = false;
+/** Raid debugging (tests): my local hit-related events. */
+const raidDebug: string[] = [];
+let lastJoin = -Infinity;
+function joinRaid(): void {
+  lastJoin = elapsed;
+  raidWasActive = false;
+  net.raid.join(playerName || 'Resistance fighter', playerColor);
+}
+el('lobby-start').addEventListener('click', e => {
+  net.raid.start();
+  (e.currentTarget as HTMLElement).blur();
+});
+el('lobby-leave').addEventListener('click', () => {
+  net.raid.leave();
+  mode = 'solo';
+  raidWasActive = false;
+  fight = newFight();
+  fx.reset();
+});
+let raidUiTimer = 0;
+/** Lobby list and in-raid team panel (refreshed a few times a second). */
+function updateRaidUi(dt: number, status: string): void {
+  raidUiTimer -= dt;
+  if (raidUiTimer > 0) return;
+  raidUiTimer = 0.2;
+  const me = net.raid.me();
+  const members = net.raid.members();
+  if (status === 'lobby' || status === 'none') {
+    const humans = members.filter(m => !m.isBot);
+    const rows = humans.map(m => `<li style="--c:${m.color}"><i></i>${escapeHtml(m.name)}${me && m.id === me.id ? '<span class="you">YOU</span>' : ''}</li>`);
+    for (let i = humans.length; i < 5; i++) rows.push('<li class="bot"><i></i>Open slot (a bot fills it at start)</li>');
+    ui.lobbyList.innerHTML = rows.join('');
+    ui.lobbySub.textContent = status === 'none'
+      ? 'Connecting to the raid lobby…'
+      : `${humans.length} of 5 fighters here. Start whenever you're ready: empty slots are filled with bots, and Skynet's HP grows with the team.`;
+  } else {
+    ui.team.innerHTML = '<div class="title">RAID TEAM</div>' + members.map(m => `<div class="t${m.dead ? ' down' : ''}"><b style="color:${m.color}">${escapeHtml(m.name)}${me && m.id === me.id ? ' (you)' : ''}</b><span>${Math.round(m.dealt)} dmg</span><div class="bar"><div style="width:${Math.max(0, m.health)}%"></div></div></div>`).join('');
+  }
+}
+function escapeHtml(t: string): string {
+  return t.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
 let brain: Brain = heuristicBrain;
 /** Shared-brain version this fight is using, or -1 (local AI / peace: never submitted). */
 let fightPolicyVersion = -1;
@@ -326,7 +389,14 @@ let lostAt = -1;
 
 function newFight() {
   const f = createFight(arena, fightSeed++);
-  f.player.pos = { x: spawnX, y: heightAt(spawnX, spawnZ), z: spawnZ };
+  const x = mode === 'raid' ? arena.spawn.x + (raidClient.mySlot() - 2) * 3 : spawnX;
+  const z = mode === 'raid' ? arena.spawn.z : spawnZ;
+  f.player.pos = { x, y: heightAt(x, z), z };
+  if (mode === 'raid') {
+    fightPolicyVersion = -1;
+    fightPolicy = null;
+    raidClient.reset();
+  }
   fightStarted = false;
   submitted = false;
   explained = 0;
@@ -407,6 +477,7 @@ const lookDir = new THREE.Vector3(0, 0, -1);
     return submitted;
   },
   net,
+  raidDebug,
 };
 
 const BOSS_STATE_LABEL: Record<string, string> = { telegraph: 'CHARGING', recover: '', return: 'RETURNING' };
@@ -421,13 +492,33 @@ renderer.setAnimationLoop(() => {
   last = now;
   elapsed += frameDt;
 
+  const raidStatus = mode === 'raid' ? raidClient.status() : 'none';
+  const raidMode = mode === 'raid' && (raidStatus === 'active' || raidStatus === 'won' || raidStatus === 'lost');
   if (input.consumePressed('KeyR')) {
-    if (fight.outcome === 'active') submitFight('abandoned');
-    fight = newFight();
-    fx.reset();
-    Object.assign(prevPos, fight.player.pos);
-    Object.assign(prevBoss, fight.boss.pos);
+    if (mode === 'raid') {
+      // A raid can't be restarted mid-fight; once it's over, R finds a new raid.
+      if (raidStatus === 'won' || raidStatus === 'lost') joinRaid();
+    } else {
+      if (fight.outcome === 'active') submitFight('abandoned');
+      fight = newFight();
+      fx.reset();
+      Object.assign(prevPos, fight.player.pos);
+      Object.assign(prevBoss, fight.boss.pos);
+    }
   }
+  if (mode === 'raid') {
+    // The raid just started: fresh local fight at my slot's spawn.
+    if (raidStatus === 'active' && !raidWasActive) {
+      raidWasActive = true;
+      fight = newFight();
+      fx.reset();
+      Object.assign(prevPos, fight.player.pos);
+    }
+    if (raidStatus === 'none' && elapsed - lastJoin > 4) joinRaid();
+    updateRaidUi(frameDt, raidStatus);
+  }
+  ui.lobby.classList.toggle('hidden', !(mode === 'raid' && (raidStatus === 'lobby' || raidStatus === 'none')));
+  ui.team.classList.toggle('hidden', !raidMode || params.has('shot'));
 
   const { dx, dy } = input.takeMouseDelta();
   thirdPerson.rotate(dx, dy);
@@ -435,8 +526,26 @@ renderer.setAnimationLoop(() => {
   camera.getWorldDirection(lookDir);
   // The fight only runs while you're playing (mouse captured); Esc pauses it.
   // ?autoplay / ?shot keep it running for automated tests and screenshots.
-  const running = input.locked || params.has('autoplay') || params.has('shot');
+  const running = (input.locked || params.has('autoplay') || params.has('shot')) && (mode === 'solo' || raidMode);
   accumulator = running ? accumulator + frameDt : 0;
+  while (accumulator >= SIM_DT && raidMode) {
+    // Raid: Skynet, its projectiles, and my health come from the server; I move and attack locally.
+    fightStarted = true;
+    const vitals = fight.health + fight.armor;
+    const serverEvents = raidClient.syncBefore(fight, SIM_DT);
+    if (fight.health + fight.armor < vitals - 0.01) hurtFlash = 1;
+    fx.handle(serverEvents, fight);
+    handleCallouts(serverEvents);
+    for (const e of serverEvents) if (e.type === 'bossHit') skynet.hit(e.damage);
+    Object.assign(prevPos, fight.player.pos);
+    const prevCd = fight.skillCd.slice();
+    const events = stepFight(fight, arena, fight.outcome === 'active' ? readInput() : NO_INPUT, SIM_DT, null);
+    fx.handle(events, fight);
+    for (const e of events) if (e.type === 'bossHit' || e.type === 'reflected' || e.type === 'lightning' || e.type === 'beamImpact') raidDebug.push(e.type === 'lightning' ? `lightning:${e.hit}` : e.type === 'beamImpact' ? `beam:${e.hitBoss}` : e.type);
+    raidClient.syncAfter(fight, events, prevCd, SIM_DT);
+    input.clearPressed();
+    accumulator -= SIM_DT;
+  }
   while (accumulator >= SIM_DT) {
     // Freeze the brain at the first tick; if that happened before the shared brain connected,
     // upgrade as long as Skynet hasn't made a decision yet (~2 s into every fight).
@@ -463,7 +572,11 @@ renderer.setAnimationLoop(() => {
   arenaMeshes.update(renderTime);
   const player = fight.player;
   const renderPos = { x: lerp(prevPos.x, player.pos.x, alpha), y: lerp(prevPos.y, player.pos.y, alpha), z: lerp(prevPos.z, player.pos.z, alpha) };
-  const bossPos = { x: lerp(prevBoss.x, fight.boss.pos.x, alpha), y: lerp(prevBoss.y, fight.boss.pos.y, alpha), z: lerp(prevBoss.z, fight.boss.pos.z, alpha) };
+  const bossPos = raidMode
+    ? raidClient.bossRenderPos(frameDt, fight)
+    : { x: lerp(prevBoss.x, fight.boss.pos.x, alpha), y: lerp(prevBoss.y, fight.boss.pos.y, alpha), z: lerp(prevBoss.z, fight.boss.pos.z, alpha) };
+  // Teammates first: their hero updates share glow materials that my hero's update then restores.
+  const botShots = raidClient.renderRemotes(frameDt, elapsed, camera);
 
   hero.group.position.set(renderPos.x, renderPos.y, renderPos.z);
   hero.group.rotation.y = player.yaw;
@@ -486,7 +599,7 @@ renderer.setAnimationLoop(() => {
   const bossFloor = Math.max(heightAt(bossPos.x, bossPos.z), bossPos.y - bossDrop * 120);
   skynet.animate(elapsed, frameDt, bossPos, fight.boss, bossFloor);
   fx.shake = Math.max(fx.shake, skynet.shake);
-  fx.update(fight, frameDt, elapsed);
+  fx.update(botShots.length ? { ...fight, shots: [...fight.shots, ...botShots] } : fight, frameDt, elapsed);
 
   // Shadow sits on whatever is directly below: terrain, a wall top, or a slab.
   const below = raycast(arena, { x: renderPos.x, y: renderPos.y + 0.1, z: renderPos.z }, { x: renderPos.x, y: renderPos.y - 60, z: renderPos.z }, renderTime);
@@ -513,12 +626,13 @@ renderer.setAnimationLoop(() => {
   const b = fight.boss;
   const startOpen = !startScreen.classList.contains('hidden');
   ui.hud.classList.toggle('hidden', input.locked || params.has('shot') || startOpen);
-  ui.bossHp.style.width = `${(b.hp / BOSS.maxHp) * 100}%`;
+  ui.bossHp.style.width = `${(Math.max(0, b.hp) / b.maxHp) * 100}%`;
   ui.bossEnergy.style.width = `${(b.energy / BOSS.maxEnergy) * 100}%`;
   ui.bossHud.classList.toggle('enraged', b.enraged);
   const arm = b.arm >= 0 ? ARMS[b.arm] : null;
   const stunned = b.phase === 'recover' && arm?.kind === 'attack' && arm.attack === 'dive';
-  ui.bossState.textContent = stunned ? 'STUNNED — STRIKE NOW' : (BOSS_STATE_LABEL[b.phase] ?? '');
+  const downInRaid = raidMode && raidStatus === 'active' && fight.outcome === 'lost';
+  ui.bossState.textContent = downInRaid ? 'YOU ARE DOWN · YOUR TEAM FIGHTS ON' : stunned ? 'STUNNED — STRIKE NOW' : (BOSS_STATE_LABEL[b.phase] ?? '');
   ui.armor.style.width = `${(fight.armor / VITALS.armor) * 100}%`;
   ui.armorText.textContent = `${Math.ceil(fight.armor)}`;
   ui.health.style.width = `${(fight.health / VITALS.health) * 100}%`;
@@ -543,11 +657,15 @@ renderer.setAnimationLoop(() => {
   ui.vignette.style.opacity = String(Math.max(hurtFlash, 0.85 * drain));
   // On a win, hold the result screen until Skynet's death sequence has played out.
   // Both endings hold the result screen until their animation has played out.
-  const showResult = (fight.outcome === 'lost' && deathT > 2.3) || (fight.outcome === 'won' && skynet.deathDone());
-  ui.result.className = showResult ? fight.outcome : 'hidden';
-  ui.resultTitle.textContent = fight.outcome === 'won' ? 'SKYNET DEFEATED' : fight.outcome === 'lost' ? 'TERMINATED' : '';
-  const who = playerName ? (fight.outcome === 'won' ? `Well fought, ${playerName}. ` : `${playerName} has fallen. `) : '';
-  ui.resultNote.textContent = who + (submitted ? 'Skynet is learning from this fight.' : '');
+  // In a raid the ending is the team's: the raid is won or lost on the server.
+  const ending = raidMode ? (raidStatus === 'won' ? 'won' : raidStatus === 'lost' ? 'lost' : null) : fight.outcome === 'active' ? null : fight.outcome;
+  const showResult = (ending === 'lost' && (deathT > 2.3 || deathT < 0)) || (ending === 'won' && skynet.deathDone());
+  ui.result.className = showResult && ending ? ending : 'hidden';
+  ui.resultTitle.textContent = ending === 'won' ? 'SKYNET DEFEATED' : ending === 'lost' ? 'TERMINATED' : '';
+  const who = playerName ? (ending === 'won' ? `Well fought, ${playerName}. ` : `${playerName} has fallen. `) : '';
+  ui.resultNote.textContent = raidMode
+    ? (ending === 'won' ? 'The resistance prevails. Press R for a new raid.' : 'The raid has fallen. Press R for a new raid.')
+    : who + (submitted ? 'Skynet is learning from this fight.' : '');
   calloutTimer = Math.max(0, calloutTimer - frameDt);
   ui.callout.classList.toggle('hidden', calloutTimer <= 0 || params.has('shot'));
   updateRead(frameDt);
@@ -560,7 +678,11 @@ renderer.setAnimationLoop(() => {
   // Brain status under Skynet's name.
   const s = net.status;
   if (!s.connected) ui.brainStatus.textContent = 'LOCAL AI · OFFLINE';
-  else {
+  else if (raidMode) {
+    const team = net.raid.members();
+    const humans = team.filter(m => !m.isBot).length;
+    ui.brainStatus.textContent = `RAID · NEURAL CORE v${net.raid.current()?.policyVersion ?? s.version} · ${humans} fighter${humans === 1 ? '' : 's'} + ${team.length - humans} bots · live on SpacetimeDB`;
+  } else {
     const using = fightStarted && fightPolicyVersion >= 0 ? fightPolicyVersion : s.version;
     const newer = fightStarted && fightPolicyVersion >= 0 && s.version > fightPolicyVersion ? ` · v${s.version} next fight` : '';
     const notLearning = params.has('notrain') ? ' · test mode, not learning' : s.consented === false ? ' · not learning from you' : '';
