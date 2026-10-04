@@ -93,7 +93,28 @@ hero.
 
 ## Challenges we ran into
 
-_TODO_
+**Balancing flexibility against difficulty.** The point of Skynet is to show what AI can do
+in game design: a boss that reads how you play and adapts, instead of cycling through a fixed
+moveset. That turned out to be a balancing problem as much as an AI problem.
+
+- **Too strong hides the learning.** If one move is simply the best, the AI learns to spam it
+  against everyone, and the fight looks scripted. An early Sweeping Laser almost always hit,
+  and Skynet picked it for 60–80% of its actions against every play style. We reworked it so
+  it only punishes one habit (strafing sideways in the open) and can be escaped by changing
+  range or jumping.
+- **Too weak and it never shows up.** A counter-move only appears if it actually pays off.
+  The Feint was designed to beat players who dodge on reflex, but against our training bots
+  it rarely beat a plain volley, so Skynet seldom chose it.
+- **Some smart moves look bad to the AI.** Repositioning deals no damage by itself, so a
+  learner that scores each move on its own would never leave its perch. We gave each move a
+  share of the payoff of the attack it set up.
+- **Difficulty has to stay fair.** After 1,500 training fights Skynet went from winning 15%
+  of fights to 49%, which is hard but beatable. Against some bot styles it climbed far
+  higher, so we saved a backup every 50 versions to choose how tough the demo boss should be.
+
+Getting this right meant short dry runs before every real training round: tuning a move,
+retraining, and checking that each play style drew out a *different* counter rather than
+one dominant attack.
 
 ## Accomplishments we're proud of
 
