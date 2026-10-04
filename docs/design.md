@@ -68,6 +68,9 @@ Use **Three.js** in the browser:
   - Blade Sweep — ring AoE around Skynet (close range)
   - Dive Slam — dives onto the target, shockwave AoE, then **stunned 2.4 s (1.5× damage)**
 - Bolts/orbs are blocked by walls and roofs (`raycast`); mortars are the anti-camping tool.
+- **No safe distance:** every ranged attack reaches `BOSS_REACH` = 220 m (map diameter +
+  margin), so the map edge is covered even with Skynet on the far side; projectile lifetimes
+  derive from it (Oct 4: Seeker Orbs, drones, laser, and Dive Slam used to stop at 75–99 m).
 - **Decision = arm** (25 since moveset 2.0, §2d): wait 0.5 s, attack × aim mode
   (direct / lead / flank — flank offsets toward the player's last dodge side), or a
   repositioning move. The brain chooses frequency (by waiting), aim, and position; energy

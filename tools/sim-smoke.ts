@@ -5,6 +5,7 @@ import {
   ARMS,
   BOSS,
   bossCanSee,
+  BOSS_REACH,
   COUNTERS,
   describeStyle,
   MOVES,
@@ -437,6 +438,22 @@ const laserCharge = runFight(3, f => ({ moveZ: -1, sprint: true, ...lookAt(f, f.
 check('charging straight in slips under the Sweeping Laser', laserCharge.f.armor === VITALS.armor, `armor ${laserCharge.f.armor.toFixed(0)}`);
 const laserCover = runFight(3, () => ({}), { arena: coverArena, brain: once(isAtk('laser')), setup: ready });
 check('walls block the Sweeping Laser', laserCover.f.armor === VITALS.armor && laserCover.events.some(e => e.type === 'fire' && e.attack === 'laser'));
+
+// No safe spot: every ranged attack reaches a player standing at the map's edge, even from the
+// far side of the arena.
+{
+  const edge = (f: Fight) => { ready(f); f.player.pos = { x: 0, y: heightAt(0, 97), z: 97 }; };
+  const farSide = (f: Fight) => { edge(f); const y = heightAt(0, -88) + 30; f.boss.pos = { x: 0, y, z: -88 }; f.boss.perch = { ...f.boss.pos }; };
+  const ranged: [string, string][] = [['volley', 'direct'], ['spread', 'direct'], ['homing', 'direct'], ['mortar', 'direct'], ['feint', 'lead'], ['drones', 'direct'], ['laser', 'lead'], ['dive', 'direct']];
+  const missed: string[] = [];
+  for (const [atk, aim] of ranged) {
+    for (const [where, setup] of [['perch', edge], ['far side', farSide]] as const) {
+      const r = runFight(25, () => ({}), { brain: armIs(atk, aim), setup });
+      if (r.f.armor + r.f.health >= VITALS.armor + VITALS.health) missed.push(`${atk} from ${where}`);
+    }
+  }
+  check(`every ranged attack reaches the map edge (reach ${BOSS_REACH} m)`, missed.length === 0, missed.length ? `missed: ${missed.join(', ')}` : '8 attacks × 2 positions');
+}
 
 // Play-style profile: hiding / dashing / brawling habits are picked up within ~20-30 s.
 const camper = runFight(40, () => ({}), { arena: coverArena, brain: waitBrain });

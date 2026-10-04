@@ -1,5 +1,5 @@
 import { raycast, type Arena } from './arena';
-import { HURT_INVULN, PLAYER, SKILLS, SWORD, VITALS } from './config';
+import { ARENA_RADIUS, HURT_INVULN, PLAYER, SKILLS, SWORD, VITALS } from './config';
 import { clamp, vec3, type Vec3 } from './math';
 import { createPlayer, startRush, stepPlayer, type PlayerInput, type PlayerState } from './player';
 import { mulberry32, type Rng } from './rng';
@@ -21,6 +21,14 @@ export const BOSS = {
   /** Damage multiplier while stunned on the ground after a Dive Slam. */
   stunnedMultiplier: 1.5,
 };
+
+/**
+ * How far Skynet's ranged attacks reach: the map's full diameter plus margin for altitude, so
+ * there's no safe spot anywhere — even with Skynet flown to the far side of the arena.
+ * Projectile lifetimes are derived from it (homing paths curve, so they get 30% extra).
+ */
+export const BOSS_REACH = 2 * ARENA_RADIUS + 20;
+const ttlFor = (speed: number, homing = false) => (BOSS_REACH / speed) * (homing ? 1.3 : 1);
 
 export type AttackId = 'volley' | 'spread' | 'homing' | 'mortar' | 'sweep' | 'dive' | 'reflect' | 'feint' | 'drones' | 'laser';
 /** Repositioning moves: Skynet leaves (or returns to) its perch. */
@@ -70,7 +78,7 @@ export const MOVES = {
 const PROJ = {
   volley: { speed: 60, damage: 12, radius: 0.35, shots: 5 },
   spread: { speed: 30, damage: 8, radius: 0.35, shots: 7, fan: 0.55 },
-  homing: { speed: 13, damage: 18, radius: 0.6, shots: 3, turn: 1.6, ttl: 7 },
+  homing: { speed: 13, damage: 18, radius: 0.6, shots: 3, turn: 1.6 },
   /** Lobbed upward at `launchVy` so shells peak high and drop steeply behind cover. */
   mortar: { launchVy: 22, gravity: 24, damage: 22, radius: 0.5, aoe: 4.5, shells: 4, scatter: 3.5 },
 };
@@ -85,8 +93,8 @@ export const COUNTERS = {
   feintDelay: 0.35,
   feintShots: 3,
   feintSpeed: 70,
-  drone: { count: 2, speed: 11, turn: 2.5, ttl: 9, damage: 15, radius: 0.55 },
-  laser: { arc: 0.6, range: 90, width: 1.0, damage: 20 },
+  drone: { count: 2, speed: 11, turn: 2.5, damage: 15, radius: 0.55 },
+  laser: { arc: 0.6, range: BOSS_REACH, width: 1.0, damage: 20 },
 };
 
 /** One of Skynet's choices. The brain picks an arm index each time Skynet is ready to act. */
@@ -408,7 +416,7 @@ export function validArms(f: FightState): number[] {
     }
     if (b.energy < ATTACKS[arm.attack].cost) return;
     if (arm.attack === 'sweep' && toPlayer > SWEEP.range + 1.5) return;
-    if (arm.attack === 'dive' && horiz > 75) return;
+    if (arm.attack === 'dive' && horiz > BOSS_REACH) return;
     out.push(i);
   });
   return out;
@@ -633,7 +641,7 @@ function fire(f: FightState, arena: Arena, events: FightEvent[]): void {
       while (b.shotsFired < due) {
         const target = aimPoint(f, arm.aim, flightTimeTo(f, PROJ.volley.speed));
         const from = muzzle(f, target);
-        spawn(f, { kind: 'bolt', pos: from, vel: add(vec3(), norm(sub(target, from)), PROJ.volley.speed), ttl: 4, damage: PROJ.volley.damage, radius: PROJ.volley.radius, aoe: 0, gravity: 0, homing: 0, target: null, decision: b.decision });
+        spawn(f, { kind: 'bolt', pos: from, vel: add(vec3(), norm(sub(target, from)), PROJ.volley.speed), ttl: ttlFor(PROJ.volley.speed), damage: PROJ.volley.damage, radius: PROJ.volley.radius, aoe: 0, gravity: 0, homing: 0, target: null, decision: b.decision });
         b.shotsFired++;
         if (b.shotsFired === 1) events.push({ type: 'fire', attack: 'volley' });
       }
@@ -649,7 +657,7 @@ function fire(f: FightState, arena: Arena, events: FightEvent[]): void {
       for (let i = 0; i < PROJ.spread.shots; i++) {
         const a = base + PROJ.spread.fan * ((i / (PROJ.spread.shots - 1)) * 2 - 1);
         const v = { x: Math.cos(a) * h, y: dir.y, z: Math.sin(a) * h };
-        spawn(f, { kind: 'bolt', pos: from, vel: add(vec3(), v, PROJ.spread.speed), ttl: 4, damage: PROJ.spread.damage, radius: PROJ.spread.radius, aoe: 0, gravity: 0, homing: 0, target: null, decision: b.decision });
+        spawn(f, { kind: 'bolt', pos: from, vel: add(vec3(), v, PROJ.spread.speed), ttl: ttlFor(PROJ.spread.speed), damage: PROJ.spread.damage, radius: PROJ.spread.radius, aoe: 0, gravity: 0, homing: 0, target: null, decision: b.decision });
       }
       b.shotsFired = PROJ.spread.shots;
       events.push({ type: 'fire', attack: 'spread' });
@@ -664,7 +672,7 @@ function fire(f: FightState, arena: Arena, events: FightEvent[]): void {
         const from = muzzle(f, target);
         const d = norm(sub(target, from));
         const v = norm({ x: d.x - d.z * side, y: d.y + 0.35, z: d.z + d.x * side });
-        spawn(f, { kind: 'orb', pos: from, vel: add(vec3(), v, PROJ.homing.speed), ttl: PROJ.homing.ttl, damage: PROJ.homing.damage, radius: PROJ.homing.radius, aoe: 0, gravity: 0, homing: PROJ.homing.turn, target: null, decision: b.decision });
+        spawn(f, { kind: 'orb', pos: from, vel: add(vec3(), v, PROJ.homing.speed), ttl: ttlFor(PROJ.homing.speed, true), damage: PROJ.homing.damage, radius: PROJ.homing.radius, aoe: 0, gravity: 0, homing: PROJ.homing.turn, target: null, decision: b.decision });
         b.shotsFired++;
         if (b.shotsFired === 1) events.push({ type: 'fire', attack: 'homing' });
       }
@@ -727,7 +735,7 @@ function fire(f: FightState, arena: Arena, events: FightEvent[]): void {
       while (b.shotsFired < due) {
         const target = aimPoint(f, arm.aim, flightTimeTo(f, COUNTERS.feintSpeed));
         const from = muzzle(f, target);
-        spawn(f, { kind: 'bolt', pos: from, vel: add(vec3(), norm(sub(target, from)), COUNTERS.feintSpeed), ttl: 4, damage: PROJ.volley.damage, radius: PROJ.volley.radius, aoe: 0, gravity: 0, homing: 0, target: null, decision: b.decision });
+        spawn(f, { kind: 'bolt', pos: from, vel: add(vec3(), norm(sub(target, from)), COUNTERS.feintSpeed), ttl: ttlFor(COUNTERS.feintSpeed), damage: PROJ.volley.damage, radius: PROJ.volley.radius, aoe: 0, gravity: 0, homing: 0, target: null, decision: b.decision });
         b.shotsFired++;
         if (b.shotsFired === 1) events.push({ type: 'fire', attack: 'feint' });
       }
@@ -742,7 +750,7 @@ function fire(f: FightState, arena: Arena, events: FightEvent[]): void {
         const side = i % 2 ? 1 : -1;
         const d = norm(sub(chest, b.pos));
         const v = norm({ x: d.x - d.z * side * 1.2, y: 0.8, z: d.z + d.x * side * 1.2 });
-        spawn(f, { kind: 'drone', pos: muzzle(f, add(b.pos, v)), vel: add(vec3(), v, D.speed), ttl: D.ttl, damage: D.damage, radius: D.radius, aoe: 0, gravity: 0, homing: D.turn, target: null, phasing: true, decision: b.decision });
+        spawn(f, { kind: 'drone', pos: muzzle(f, add(b.pos, v)), vel: add(vec3(), v, D.speed), ttl: ttlFor(D.speed, true), damage: D.damage, radius: D.radius, aoe: 0, gravity: 0, homing: D.turn, target: null, phasing: true, decision: b.decision });
       }
       b.shotsFired = D.count;
       events.push({ type: 'fire', attack: 'drones' });
