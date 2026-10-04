@@ -100,6 +100,7 @@ const input = new Input(renderer.domElement);
 const el = (id: string) => document.getElementById(id)!;
 const ui = {
   hud: el('hud'),
+  bossHud: el('boss-hud'),
   bossHp: el('boss-hp'),
   bossEnergy: el('boss-energy'),
   bossState: el('boss-state'),
@@ -159,6 +160,8 @@ const CALLOUTS: Record<string, { name: string; hint: string; move?: boolean }> =
   flank: { name: 'FLANKING', hint: 'Skynet is moving for a clear shot', move: true },
   rise: { name: 'ASCENDING', hint: 'Skynet climbs for a better angle', move: true },
   retreat: { name: 'RETREATING', hint: 'Skynet returns to its perch', move: true },
+  enraged: { name: 'PHASE 2 — SKYNET ENRAGED', hint: 'Faster energy, chained attacks, shorter cooldowns' },
+  evaded: { name: 'EVADED', hint: 'Skynet saw it coming and sidestepped', move: true },
 };
 let calloutTimer = 0;
 /** Why Skynet made its latest decision (from the frozen policy it is fighting with). */
@@ -180,6 +183,15 @@ function handleCallouts(events: FightEvent[]): void {
     if (e.type === 'telegraph' && e.attack !== 'volley') showCallout(e.attack);
     if (e.type === 'fire' && e.attack === 'feint') showCallout('feint');
     if (e.type === 'move') showCallout(e.move);
+    if (e.type === 'enraged') {
+      lastWhy = 'Skynet dropped below half HP';
+      showCallout('enraged');
+    }
+    // A sidestep never interrupts a bigger callout that's still showing.
+    if (e.type === 'evaded' && calloutTimer <= 0.3) {
+      lastWhy = '';
+      showCallout('evaded');
+    }
   }
 }
 
@@ -454,6 +466,7 @@ renderer.setAnimationLoop(() => {
   ui.hud.classList.toggle('hidden', input.locked || params.has('shot'));
   ui.bossHp.style.width = `${(b.hp / BOSS.maxHp) * 100}%`;
   ui.bossEnergy.style.width = `${(b.energy / BOSS.maxEnergy) * 100}%`;
+  ui.bossHud.classList.toggle('enraged', b.enraged);
   const arm = b.arm >= 0 ? ARMS[b.arm] : null;
   const stunned = b.phase === 'recover' && arm?.kind === 'attack' && arm.attack === 'dive';
   ui.bossState.textContent = stunned ? 'STUNNED — STRIKE NOW' : (BOSS_STATE_LABEL[b.phase] ?? '');

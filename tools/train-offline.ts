@@ -44,3 +44,14 @@ for (const style of BOT_STYLES) {
     console.log(`${style.padEnd(9)} ${name.padEnd(11)} Skynet wins ${String(rs.filter(r => r.skynetWon).length).padStart(2)}/${rs.length}  dmg ${(rs.reduce((s, r) => s + r.dealt, 0) / rs.length).toFixed(0).padStart(3)}  wait ${((100 * use[0]) / total).toFixed(0)}%  top: ${top.map(x => `${armLabel(ARMS[x.i])} ${((100 * x.n) / total).toFixed(0)}%`).join(', ')}  | read: ${reads}`);
   }
 }
+
+// Overall: does Skynet use its whole kit, and does it move?
+for (const [name, part] of [['first half', rows.slice(0, half)], ['second half', rows.slice(half)]] as const) {
+  const use = ARMS.map((_, i) => part.reduce((s, r) => s + r.use[i], 0));
+  const total = use.reduce((a, b) => a + b, 0) || 1;
+  const moves = ARMS.reduce((s, a, i) => s + (a.kind === 'move' ? use[i] : 0), 0);
+  const used = use.filter((n, i) => i > 0 && n / total >= 0.02).length;
+  const top = use.map((n, i) => ({ n, i })).filter(x => x.i !== 0).sort((a, b) => b.n - a.n).slice(0, 8);
+  console.log(`ALL ${name.padEnd(11)} Skynet wins ${part.filter(r => r.skynetWon).length}/${part.length}  wait ${((100 * use[0]) / total).toFixed(0)}%  moves ${((100 * moves) / total).toFixed(0)}%  options used ≥2%: ${used}/24`);
+  console.log(`    top: ${top.map(x => `${armLabel(ARMS[x.i])} ${((100 * x.n) / total).toFixed(0)}%`).join(', ')}`);
+}

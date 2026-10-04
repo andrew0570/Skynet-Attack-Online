@@ -149,8 +149,27 @@ Goal: make Skynet's learning visible as *counters to how you play*, not just bet
   for "What Skynet has learned": the top 3 moves the live brain predicts against five
   archetype players (`ARCHETYPES`), vs. v0 where every move scored 0.
 - **Bots:** five styles (aggressor, kiter, hider under fortress roofs, dodger that pre-dodges
-  volley wind-ups, sniper at 55–75 m). Skilled bots hold fire into a shield; drone swats are
-  skill-limited. `tools/train-offline.ts` dry-runs a round without the DB.
+  volley wind-ups, sniper at 55–75 m). Every bot stops firing into a shield after a 0.2–0.6 s
+  reaction (skill-based); drone swats are skill-limited. `tools/train-offline.ts` dry-runs a
+  round without the DB.
+
+## 2e. Difficulty + variety pass (Sun ~4 AM, round 4)
+
+Round 3 playtest: adapts, but easy, barely moves, and leans on Reflect Shield (round 3's last
+300 fights: 40% waits, 5% moves, drones 27%; bots fed the shield free reflects).
+- **Tougher:** 1600 HP (reward taken-scale 320 keeps the 20% ratio), energy 16/s, 0.35 s
+  pause between attacks, Dive Slam stun 1.6 s, Reflect Shield 1.2 s.
+- **Phase 2** below 50% HP (`PHASE2`): energy ×1.5, recovery ×0.5, no pause between attacks
+  (chains), move cooldowns ×0.6. Core burns orange; callout + shockwave.
+- **Evasion reflex** (`EVADE`): when a sword beam on a collision course is fired, or a
+  lightning glyph forms under it, Skynet sidesteps 6 m in 0.25 s with 50% chance — not within
+  12 m, not mid-flight/Dive/shield; 8 energy, 3 s cooldown.
+- **Per-move cooldowns** (`MOVE_COOLDOWN`, shared across aim modes): Seeker Orbs 5 s, Mortar
+  4 s, Dive 10 s, Reflect 10 s, Feint 6 s, Drones 12 s, Laser 8 s. The bandit still picks; it
+  just has to pick among what's available, so the whole kit shows up.
+- **Movement stays AI-chosen**, made worth choosing: moves cost 0 energy, fly at 32 m/s, and
+  earn the *full* reward of the attack they set up (`moveCredit` 1).
+- Dry run (300 fights): waits 40% → 18%, moves 5% → 17%, top move 27% → 12%.
 
 ## 3. AI algorithm
 ### What the AI controls

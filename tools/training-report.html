@@ -237,6 +237,16 @@ const fig = [
   ['Avg decision reward', mean(last, 'reward').toFixed(3), `first ${WIN_RUNS} runs ${mean(first, 'reward').toFixed(3)}`],
   ['Brain version', `v${v1}`, `started at v${v0}`],
 ];
+// Kit variety (rounds that logged per-fight arm usage): how many moves Skynet really uses.
+if (DATA.armLabels && DATA.stats[0].armUse) {
+  const kit = arr => {
+    const use = DATA.armLabels.map((_, i) => arr.reduce((a, s) => a + s.armUse[i], 0));
+    const total = use.reduce((a, b) => a + b, 0) || 1;
+    return { used: use.filter((n, i) => i > 0 && n / total >= 0.02).length, wait: use[0] / total };
+  };
+  const a = kit(DATA.stats.slice(0, WIN_RUNS)), b = kit(DATA.stats.slice(-WIN_RUNS));
+  fig.splice(3, 0, ['Moves in regular use', `${b.used} of ${DATA.armLabels.length - 1}`, `≥ 2% of actions · waits ${pct(b.wait)} (first ${WIN_RUNS}: ${pct(a.wait)})`]);
+}
 document.getElementById('figures').innerHTML = fig.map(([l, v, d]) =>
   `<div class="figure"><span class="label">${l}${l === 'Brain version' ? '' : ` · last ${WIN_RUNS}`}</span><span class="value">${v}</span><span class="delta">${d}</span></div>`).join('');
 

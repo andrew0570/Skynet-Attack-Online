@@ -2,6 +2,7 @@
 // they play by exactly the same rules (stamina, cooldowns, collision) in the shared sim.
 import {
   ARMS,
+  ATTACKS,
   BOSS,
   heightAt,
   NO_INPUT,
@@ -229,8 +230,10 @@ export function botInput(bot: Bot, f: FightState, arena: Arena): PlayerInput {
     return input;
   }
 
-  // Skilled bots hold fire into a Reflect Shield (a lesson the sloppy ones never learn).
-  const holdFire = b.shield > 0 && bot.skill > 0.55;
+  // Everyone stops firing into a Reflect Shield once they notice it, like a human would:
+  // reaction time 0.2 s (sharp) to 0.6 s (sloppy). Shots already in flight still bounce back.
+  const shieldUp = b.shield > 0 ? ATTACKS.reflect.active - b.shield : -1;
+  const holdFire = shieldUp >= 0.2 + (1 - bot.skill) * 0.4;
 
   // 2) Punish a stunned Skynet after a Dive Slam: everyone piles in.
   if (stunned && toBoss.dist < 30) {

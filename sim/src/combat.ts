@@ -10,17 +10,29 @@ import { heightAt } from './terrain';
 // ---------------------------------------------------------------------------------------------
 
 export const BOSS = {
-  maxHp: 1200,
+  maxHp: 1600,
   /** Hit radius of the core + blade ring (as rendered at 2x scale). */
   radius: 3.2,
   maxEnergy: 100,
-  /** Energy per second. With attack costs of 20-40 this caps sustained attacks at ~1 per 2-3 s. */
-  energyRegen: 12,
+  /** Energy per second. With attack costs of 20-40 this caps sustained attacks at ~1 per 1.5-2.5 s. */
+  energyRegen: 16,
   /** Minimum pause after every attack before the next decision. */
-  globalCooldown: 0.5,
+  globalCooldown: 0.35,
   /** Damage multiplier while stunned on the ground after a Dive Slam. */
   stunnedMultiplier: 1.5,
 };
+
+/** Phase 2: below half HP Skynet enrages — faster energy, attacks chained back-to-back. */
+export const PHASE2 = { atHp: 0.5, energyMult: 1.5, recoverMult: 0.5, cooldownMult: 0.6, globalCooldown: 0 };
+
+/**
+ * Evasion reflex: Skynet sidesteps a sword beam or lightning strike it sees coming (not too
+ * close to react), if it can afford it. Costs energy and has its own cooldown.
+ */
+export const EVADE = { chance: 0.5, distance: 6, time: 0.25, cooldown: 3, cost: 8, minRange: 12 };
+
+/** Per-move cooldowns (s), shared by every aim of that move, so Skynet has to rotate its kit. */
+export const MOVE_COOLDOWN: Partial<Record<string, number>> = { homing: 5, mortar: 4, dive: 10, reflect: 10, feint: 6, drones: 12, laser: 8 };
 
 /**
  * How far Skynet's ranged attacks reach: the map's full diameter plus margin for altitude, so
@@ -49,10 +61,10 @@ export const ATTACKS: Record<AttackId, AttackSpec> = {
   homing: { cost: 34, telegraph: 0.8, active: 0.5, recover: 0.6 },
   mortar: { cost: 30, telegraph: 0.6, active: 0.45, recover: 0.6 },
   sweep: { cost: 20, telegraph: 0.6, active: 0.3, recover: 0.6 },
-  dive: { cost: 40, telegraph: 0.9, active: 0.7, recover: 2.4 },
+  dive: { cost: 40, telegraph: 0.9, active: 0.7, recover: 1.6 },
   // Style counters:
   /** Shield that reflects sword beams and punishes melee (vs snipers and melee spammers). */
-  reflect: { cost: 25, telegraph: 0.25, active: 1.6, recover: 0.3 },
+  reflect: { cost: 25, telegraph: 0.25, active: 1.2, recover: 0.3 },
   /** Looks like a volley wind-up, waits for the dodge, then fires fast (vs reactive dodgers). */
   feint: { cost: 24, telegraph: 0.55, active: 0.75, recover: 0.4 },
   /** Slow seekers that phase through walls; destroyable (vs campers). */
@@ -62,8 +74,8 @@ export const ATTACKS: Record<AttackId, AttackSpec> = {
 };
 
 export const MOVES = {
-  cost: 6,
-  speed: 24,
+  cost: 0,
+  speed: 32,
   /** Minimum altitude above the ground: open ground (glade/corridors) vs over the fortresses. */
   minAltOpen: 6,
   minAltFortress: 15,
@@ -162,6 +174,14 @@ export interface BossState {
   moveTime: number;
   /** Reflect Shield time remaining. */
   shield: number;
+  /** Seconds until each move (by attack id) can be used again. */
+  moveCd: Partial<Record<AttackId, number>>;
+  /** Phase 2 (below half HP). */
+  enraged: boolean;
+  /** Evasion: cooldown, time left in the current sidestep, and its velocity. */
+  evadeCd: number;
+  evadeTimer: number;
+  evadeVel: Vec3;
   /** Sweeping Laser: centre heading/pitch of the arc and the live beam (for rendering). */
   laserYaw: number;
   laserPitch: number;
@@ -256,7 +276,9 @@ export type FightEvent =
   | { type: 'beamImpact'; pos: Vec3; hitBoss: boolean }
   | { type: 'move'; move: MoveId; to: Vec3 }
   | { type: 'reflected'; pos: Vec3; what: 'beam' | 'melee' | 'lightning' | 'rush' }
-  | { type: 'droneDestroyed'; pos: Vec3 };
+  | { type: 'droneDestroyed'; pos: Vec3 }
+  | { type: 'enraged' }
+  | { type: 'evaded'; from: Vec3; what: 'beam' | 'lightning' };
 
 /** Player's sword-beam projectile. */
 export interface PlayerShot {
@@ -332,6 +354,7 @@ export function createFight(arena: Arena, seed = 1): FightState {
       cooldown: 2, arm: -1, aim: vec3(), shotsFired: 0, diveFrom: { ...perch }, decision: -1,
       home: { ...perch }, moveFrom: { ...perch }, moveTo: { ...perch }, moveTime: 0,
       shield: 0, laserYaw: 0, laserPitch: 0, laserSweep: 1, laserPrevYaw: 0, laserDir: null, laserLen: 0,
+      moveCd: {}, enraged: false, evadeCd: 0, evadeTimer: 0, evadeVel: vec3(),
     },
     projectiles: [],
     nextId: 1,
@@ -415,6 +438,7 @@ export function validArms(f: FightState): number[] {
       return out.push(i);
     }
     if (b.energy < ATTACKS[arm.attack].cost) return;
+    if ((b.moveCd[arm.attack] ?? 0) > 0) return;
     if (arm.attack === 'sweep' && toPlayer > SWEEP.range + 1.5) return;
     if (arm.attack === 'dive' && horiz > BOSS_REACH) return;
     out.push(i);
@@ -486,6 +510,10 @@ function damageBoss(f: FightState, amount: number, events: FightEvent[], source:
   b.hp -= dmg;
   if (b.decision >= 0) f.decisions[b.decision].taken += dmg;
   events.push({ type: 'bossHit', damage: dmg, stunned });
+  if (!b.enraged && b.hp > 0 && b.hp <= BOSS.maxHp * PHASE2.atHp) {
+    b.enraged = true;
+    events.push({ type: 'enraged' });
+  }
   if (b.hp <= 0) {
     f.outcome = 'won';
     events.push({ type: 'won' });
@@ -586,6 +614,8 @@ function startAction(f: FightState, arena: Arena, armIndex: number, context: num
   }
   const spec = ATTACKS[arm.attack];
   b.energy -= spec.cost;
+  const cd = MOVE_COOLDOWN[arm.attack];
+  if (cd) b.moveCd[arm.attack] = cd * (b.enraged ? PHASE2.cooldownMult : 1);
   b.phase = 'telegraph';
   b.timer = spec.telegraph;
   b.shotsFired = 0;
@@ -800,9 +830,20 @@ function fire(f: FightState, arena: Arena, events: FightEvent[]): void {
 
 function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events: FightEvent[]): void {
   const b = f.boss;
-  b.energy = Math.min(BOSS.maxEnergy, b.energy + BOSS.energyRegen * dt);
+  b.energy = Math.min(BOSS.maxEnergy, b.energy + BOSS.energyRegen * (b.enraged ? PHASE2.energyMult : 1) * dt);
   b.cooldown = Math.max(0, b.cooldown - dt);
   b.shield = Math.max(0, b.shield - dt);
+  b.evadeCd = Math.max(0, b.evadeCd - dt);
+  for (const k of Object.keys(b.moveCd) as AttackId[]) b.moveCd[k] = Math.max(0, b.moveCd[k]! - dt);
+  // Evasive sidestep in progress (layered on top of whatever Skynet is doing).
+  if (b.evadeTimer > 0) {
+    const step = Math.min(dt, b.evadeTimer);
+    b.evadeTimer -= step;
+    b.pos = add(b.pos, b.evadeVel, step);
+    // Wherever it hovers next is its new spot (a Dive Slam returns here too).
+    if (b.phase !== 'return') b.home = { ...b.pos };
+  }
+  const globalCooldown = b.enraged ? PHASE2.globalCooldown : BOSS.globalCooldown;
 
   switch (b.phase) {
     case 'idle':
@@ -843,7 +884,7 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
         fire(f, arena, events); // flush any shots due at the very end
         const arm = ARMS[b.arm] as { attack: AttackId };
         b.phase = 'recover';
-        b.timer = ATTACKS[arm.attack].recover;
+        b.timer = ATTACKS[arm.attack].recover * (b.enraged ? PHASE2.recoverMult : 1);
         b.laserDir = null;
       }
       break;
@@ -857,7 +898,7 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
           b.diveFrom = { ...b.pos };
         } else {
           b.phase = 'idle';
-          b.cooldown = BOSS.globalCooldown;
+          b.cooldown = globalCooldown;
         }
       }
       break;
@@ -869,7 +910,7 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
       if (b.timer <= 0) {
         b.pos = { ...b.home };
         b.phase = 'idle';
-        b.cooldown = BOSS.globalCooldown;
+        b.cooldown = globalCooldown;
       }
       break;
     }
@@ -1001,6 +1042,31 @@ export function aimRay(f: FightState, arena: Arena, eye: Vec3, look: Vec3): { po
   return { point: add(eye, dir, best), hitBoss, dist: best };
 }
 
+/**
+ * Evasion reflex: when Skynet sees a beam or lightning strike that would hit it, it may sidestep
+ * (`away` = horizontal direction to dodge along). Not when the player is too close to react to,
+ * not mid-flight or mid-Dive, and only if it has the energy and the reflex is off cooldown.
+ */
+function tryEvade(f: FightState, arena: Arena, away: Vec3, what: 'beam' | 'lightning', events: FightEvent[]): void {
+  const b = f.boss;
+  const arm = b.arm >= 0 ? ARMS[b.arm] : null;
+  const diving = arm?.kind === 'attack' && arm.attack === 'dive' && b.phase !== 'idle';
+  if (b.phase === 'moving' || b.phase === 'return' || diving || b.evadeTimer > 0) return;
+  if (b.evadeCd > 0 || b.energy < EVADE.cost || b.shield > 0) return;
+  if (len(sub(playerChest(f.player), b.pos)) < EVADE.minRange) return;
+  if (f.rng() >= EVADE.chance) return;
+  const h = Math.hypot(away.x, away.z) || 1;
+  const dir = { x: away.x / h, y: 0, z: away.z / h };
+  // Don't sidestep into a wall or out of the arena.
+  const to = add(b.pos, dir, EVADE.distance);
+  const flip = raycast(arena, b.pos, to, f.time) < 1 || Math.hypot(to.x, to.z) > 90;
+  b.evadeVel = add(vec3(), dir, ((flip ? -1 : 1) * EVADE.distance) / EVADE.time);
+  b.evadeTimer = EVADE.time;
+  b.evadeCd = EVADE.cooldown;
+  b.energy -= EVADE.cost;
+  events.push({ type: 'evaded', from: { ...b.pos }, what });
+}
+
 function castLightning(f: FightState, arena: Arena, eye: Vec3, look: Vec3, events: FightEvent[]): void {
   const p = f.player;
   const L = SKILLS.lightning;
@@ -1024,6 +1090,12 @@ function castLightning(f: FightState, arena: Arena, eye: Vec3, look: Vec3, event
   const y = inRange && !aim.hitBoss ? Math.max(heightAt(x, z), aim.point.y) : heightAt(x, z);
   f.lightning = { pos: { x, y, z }, timer: L.castTime };
   events.push({ type: 'lightningCast', pos: { x, y, z } });
+  // Skynet sees the glyph forming under it: dodge out of the column.
+  const b = f.boss.pos;
+  const off = { x: b.x - x, y: 0, z: b.z - z };
+  if (Math.hypot(off.x, off.z) <= L.radius + BOSS.radius * 0.5 && b.y >= y - 2) {
+    tryEvade(f, arena, Math.hypot(off.x, off.z) > 0.1 ? off : { x: 1, y: 0, z: 0 }, 'lightning', events);
+  }
 }
 
 function strikeLightning(f: FightState, events: FightEvent[]): void {
@@ -1049,6 +1121,12 @@ function fireBeam(f: FightState, arena: Arena, eye: Vec3, look: Vec3, events: Fi
   // Face the shot.
   if (Math.hypot(dir.x, dir.z) > 0.1) p.yaw = Math.atan2(dir.x, dir.z);
   events.push({ type: 'beamFired', from });
+  // Skynet sees a beam that's going to hit it: sidestep across its path.
+  const tHit = raySphere(from, dir, f.boss.pos, BOSS.radius + B.radius + 0.5);
+  if (tHit < B.speed * B.ttl && raycast(arena, from, f.boss.pos, f.time) >= 1) {
+    const side = f.rng() < 0.5 ? 1 : -1;
+    tryEvade(f, arena, { x: -dir.z * side, y: 0, z: dir.x * side }, 'beam', events);
+  }
 }
 
 function stepSkills(f: FightState, arena: Arena, input: PlayerInput, dt: number, events: FightEvent[]): void {
@@ -1117,14 +1195,14 @@ function stepSkills(f: FightState, arena: Arena, input: PlayerInput, dt: number,
 
 // ---------------------------------------------------------------------------------------------
 // Rewards (HP-fraction): damage dealt as a share of the player's 150 HP vs damage taken as a
-// share of Skynet's 1200, minus a small energy charge. 30 and 240 are both 20% of each side.
+// share of Skynet's 1600, minus a small energy charge. 30 and 320 are both 20% of each side.
 // ---------------------------------------------------------------------------------------------
 
 /**
  * `moveCredit`: a repositioning move deals no damage itself — its value is the attack it sets up,
  * so it also earns this share of the next decision's reward.
  */
-export const REWARD = { dealtScale: 30, takenScale: 240, energyWeight: 0.1, energyScale: 40, moveCredit: 0.6 };
+export const REWARD = { dealtScale: 30, takenScale: 320, energyWeight: 0.1, energyScale: 40, moveCredit: 1 };
 
 export function rewardOf(d: Pick<Decision, 'dealt' | 'taken' | 'cost'>): number {
   const r = d.dealt / REWARD.dealtScale - d.taken / REWARD.takenScale - (REWARD.energyWeight * d.cost) / REWARD.energyScale;

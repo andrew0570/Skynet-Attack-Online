@@ -59,7 +59,10 @@ Skynet doesn't just aim better over time; it learns to counter **how you play**:
   sword beams back at snipers and punishes button-mashing brawlers. A **Feint** fakes a volley
   to bait your dodge. A **Sweeping Laser** rakes the open ground where strafers run.
 - It leaves its perch to **hunt** you down, **flank** around cover for a clear shot, rise,
-  or retreat.
+  or retreat, and it sidesteps sword beams and lightning strikes it sees coming.
+- Every special move has a cooldown, so Skynet has to rotate its whole kit; the AI decides
+  which available move fits you right now.
+- At half health it **enrages**: faster energy, chained attacks, shorter cooldowns.
 - Every counter-move is called out on screen with Skynet's reason, for example "HUNTER DRONES:
   because you hide in cover". Hold Tab to see what the community has taught it: its best
   moves against each kind of player, next to the untrained version that picked at random.

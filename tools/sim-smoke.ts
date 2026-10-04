@@ -5,6 +5,7 @@ import {
   ARMS,
   BOSS,
   bossCanSee,
+  PHASE2,
   BOSS_REACH,
   COUNTERS,
   describeStyle,
@@ -323,6 +324,7 @@ check('dash i-frames dodge attacks', dodging.f.armor === VITALS.armor && dodging
 
 const swordSetup = (f: Fight) => {
   f.boss.cooldown = 1e9;
+  f.boss.evadeCd = 1e9;
   f.boss.pos = { x: f.player.pos.x, y: f.player.pos.y + 1.1, z: f.player.pos.z - 4 };
 };
 const combo = runFight(2, (_f, t) => ({ attack: t === 0 || t === 20 || t === 40, aimZ: -1 }), { setup: swordSetup });
@@ -353,7 +355,8 @@ const lose = runFight(30, () => ({}), { setup: f => { f.health = 1; f.armor = 0;
 check('running out of HP loses the fight', lose.f.outcome === 'lost' && lose.events.some(e => e.type === 'lost'));
 
 // ---------- Skills ----------
-const calm = (f: Fight) => (f.boss.cooldown = 1e9);
+/** Skynet holds still: no attacks and no evasive sidesteps. */
+const calm = (f: Fight) => { f.boss.cooldown = 1e9; f.boss.evadeCd = 1e9; };
 /** Camera 6 m behind and 3 m above the player, looking at `target`. */
 const lookAt = (f: Fight, target: { x: number; y: number; z: number }) => {
   const eye = { x: f.player.pos.x, y: f.player.pos.y + 3, z: f.player.pos.z + 6 };
@@ -448,11 +451,33 @@ check('walls block the Sweeping Laser', laserCover.f.armor === VITALS.armor && l
   const missed: string[] = [];
   for (const [atk, aim] of ranged) {
     for (const [where, setup] of [['perch', edge], ['far side', farSide]] as const) {
-      const r = runFight(25, () => ({}), { brain: armIs(atk, aim), setup });
-      if (r.f.armor + r.f.health >= VITALS.armor + VITALS.health) missed.push(`${atk} from ${where}`);
+      const r = runFight(40, () => ({}), { brain: armIs(atk, aim), setup });
+      if (!r.events.some(e => e.type === 'playerHit')) missed.push(`${atk} from ${where}`);
     }
   }
   check(`every ranged attack reaches the map edge (reach ${BOSS_REACH} m)`, missed.length === 0, missed.length ? `missed: ${missed.join(', ')}` : '8 attacks × 2 positions');
+}
+
+// Difficulty: per-move cooldowns, phase 2, evasion.
+{
+  const spamShield = runFight(30, () => ({}), { brain: armIs('reflect'), setup: f => { ready(f); f.health = 1e9; } });
+  const shields = spamShield.f.decisions.filter(d => isAtk('reflect')(ARMS[d.arm])).length;
+  check('per-move cooldown: Reflect Shield at most once per 10 s', shields >= 2 && shields <= 3, `${shields} shields in 30 s`);
+
+  const enrage = runFight(1, (_f, t) => ({ attack: t === 0, aimZ: -1 }), { setup: f => { swordSetup(f); f.boss.hp = BOSS.maxHp * PHASE2.atHp + 10; } });
+  check('Skynet enrages (phase 2) below half HP', enrage.f.boss.enraged && enrage.events.some(e => e.type === 'enraged'));
+  const regen = (enraged: boolean) => runFight(1, () => ({}), { setup: f => { calm(f); f.boss.energy = 0; f.boss.enraged = enraged; } }).f.boss.energy;
+  check('phase 2 regenerates energy faster', Math.abs(regen(true) / regen(false) - PHASE2.energyMult) < 0.02, `${regen(false).toFixed(1)} → ${regen(true).toFixed(1)} per s`);
+
+  // Fire beams at a Skynet that is free to evade, across several seeds: some get sidestepped.
+  let evades = 0;
+  let hits = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const r = runFight(1.5, (f, t) => ({ ...lookAt(f, f.boss.pos), skill: t === 0 ? 3 : 0 }), { seed, setup: f => { placeAt(40)(f); f.boss.evadeCd = 0; } });
+    if (r.events.some(e => e.type === 'evaded')) evades++;
+    if (r.f.boss.hp < BOSS.maxHp) hits++;
+  }
+  check('Skynet sidesteps some sword beams it sees coming', evades >= 3 && evades <= 10 && hits + evades === 12, `${evades} of 12 beams evaded, ${hits} hit`);
 }
 
 // Play-style profile: hiding / dashing / brawling habits are picked up within ~20-30 s.
@@ -501,7 +526,7 @@ check('context: "player visible" sees walls', featsOpen[VIS] === 1 && computeFea
 }
 
 check('reward: HP-fraction formula', Math.abs(rewardOf({ dealt: 24, taken: 0, cost: 22 }) - (24 / 30 - 0.1 * 22 / 40)) < 1e-12
-  && Math.abs(rewardOf({ dealt: 0, taken: 100, cost: 0 }) + 100 / 240) < 1e-12 && rewardOf({ dealt: 0, taken: 300, cost: 40 }) === -1);
+  && Math.abs(rewardOf({ dealt: 0, taken: 100, cost: 0 }) + 100 / 320) < 1e-12 && rewardOf({ dealt: 0, taken: 300, cost: 40 }) === -1);
 
 {
   const f = createFight(coverArena, 7);

@@ -82,6 +82,7 @@ export function createSkynet(): SkynetVisual {
   let ringSpin = 0;
   const red = new THREE.Color(0xff2200);
   const white = new THREE.Color(0xffffff);
+  const enragedColor = new THREE.Color(0xff7a20);
   // Deterministic-looking jitter from layered sines (no per-frame random pops).
   const jitter = (t: number, seed: number) => Math.sin(t * 61 + seed) * 0.6 + Math.sin(t * 97 + seed * 2.3) * 0.4;
   return {
@@ -101,13 +102,14 @@ export function createSkynet(): SkynetVisual {
       let intensity = 5;
       if (boss.phase === 'telegraph') intensity = 8 + 5 * (1 - boss.timer / ATTACKS[attack!].telegraph) + Math.sin(t * 40) * 1.2;
       if (stunned) intensity = 1.5 + (Math.sin(t * 23) > 0.6 ? 4 : 0);
-      coreMat.emissive.copy(flash > 0 ? white : red);
+      // Phase 2: the core burns white-hot orange and the light flares.
+      coreMat.emissive.copy(flash > 0 ? white : boss.enraged ? enragedColor : red);
       coreMat.emissiveIntensity = flash > 0 ? 12 : intensity;
-      light.intensity = 60 + intensity * 8;
+      light.intensity = (60 + intensity * 8) * (boss.enraged ? 1.6 : 1);
 
       // Blade ring spins up for the sweep and glows.
       const sweeping = attack === 'sweep' && (boss.phase === 'telegraph' || boss.phase === 'active');
-      ringSpin += dt * (sweeping ? 18 : stunned ? 0.5 : 2);
+      ringSpin += dt * (sweeping ? 18 : stunned ? 0.5 : boss.enraged ? 5 : 2);
       ringMat.emissiveIntensity = sweeping ? 4 : 0;
       ring.rotation.set(Math.PI / 2 + (stunned ? 0.8 : Math.sin(t) * 0.3), 0, ringSpin);
       ring.scale.setScalar(attack === 'sweep' && boss.phase === 'active' ? 1.35 : 1);

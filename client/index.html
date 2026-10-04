@@ -21,6 +21,9 @@
       #boss-hud { position: fixed; top: 18px; left: 50%; width: min(560px, 70vw); transform: translateX(-50%); pointer-events: none; }
       #boss-hud .name { text-align: center; letter-spacing: 0.35em; font-weight: 700; color: #ff5a3c; text-shadow: 0 0 10px #ff2200; margin-bottom: 6px; }
       #boss-hp { background: linear-gradient(90deg, #ff2a10, #ff7a3c); }
+      #boss-hp-bar { position: relative; }
+      #boss-hp-bar .phase-mark { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.75); }
+      #boss-hud.enraged .name { color: #ffb020; text-shadow: 0 0 14px #ff6a00; }
       #brain-status { text-align: center; font-size: 0.68rem; letter-spacing: 0.18em; color: #ff9a7a; opacity: 0.85; margin: -2px 0 6px; }
       #result-note { color: #9dffe0; }
       #consent { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(5,2,2,0.75); z-index: 10; transition: opacity 0.2s; }
@@ -113,7 +116,7 @@
     <div id="boss-hud">
       <div class="name">SKYNET</div>
       <div id="brain-status"></div>
-      <div class="bar"><div id="boss-hp"></div></div>
+      <div class="bar" id="boss-hp-bar"><div id="boss-hp"></div><i class="phase-mark" title="Phase 2"></i></div>
       <div class="bar" id="boss-energy-bar"><div id="boss-energy"></div></div>
       <div id="boss-state"></div>
     </div>

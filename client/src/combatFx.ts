@@ -180,6 +180,15 @@ export function createCombatFx(scene: THREE.Scene): CombatFx {
           burst(e.pos, 6, hdr(1, 0.8, 0.3, 3), 0.3);
           fx.shake = Math.max(fx.shake, 0.3);
           break;
+        case 'enraged':
+          shockwave(fight.boss.pos, 30, hdr(1, 0.4, 0.1, 4), 0.8);
+          burst(fight.boss.pos, 9, hdr(1, 0.5, 0.15, 4), 0.5);
+          fx.shake = Math.max(fx.shake, 0.9);
+          break;
+        case 'evaded':
+          // Afterimage where Skynet was.
+          burst(e.from, 3.2, hdr(1, 0.2, 0.05, 2), 0.35);
+          break;
         case 'droneDestroyed':
           burst(e.pos, 1.8, hdr(0.8, 0.3, 1, 4), 0.3);
           break;
