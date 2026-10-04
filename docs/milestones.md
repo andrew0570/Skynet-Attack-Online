@@ -56,7 +56,10 @@ brain status line, fight pauses until engaged. Verified end-to-end in a real bro
   the updated policy.
 - **Cut line:** skip snapshots and player profiles; minimal validation (counts + ranges only).
 
-## M5 — Overnight bot trainer · 2:45 → 3:30 AM
+## M5 — Overnight bot trainer · 2:45 → 3:30 AM ✅ (done ~1:00 AM)
+Round 1: 250 fights, old balance (Skynet 2% wins in the last 50). Balance pass (bolts 60 m/s,
+energy 12/s), DB reset to v0. Round 2: 1000 fights → brain v1000, Skynet win rate 15% (first
+100) → 31% (last 100), 0 rejected, 21 backups (v0, v50 … v1000) in backups/.
 - `tools/train-bots.ts`: runs `sim/` headless in Node with 3 scripted player styles
   (aggressive, kiter, always-dodges-left), many fights at accelerated time, submitting logs
   through the same `submit_fight` path. Tag bot fights.
