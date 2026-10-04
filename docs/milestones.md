@@ -78,6 +78,14 @@ vs hider (camper) Hunter Drones 19% → 70% of actions, wins 17% → 70%; vs kit
 Reflect Shield 17–20% → 45%; vs sniper Seeker Orbs + Sweeping Laser, wins 53% → 97%.
 Design: docs/design.md §2d.
 
+## M5.6 — Difficulty + variety pass · ~3:30 → 5:00 AM ✅ (added)
+Round 3 playtest: easy, static, shield-spamming. Added 1600 HP, faster energy, phase 2 at 50%
+HP, evasion reflex, per-move cooldowns, free/faster AI-chosen moves with full set-up credit,
+shield-respecting bots (design.md §2e). Round 4: 1500 fights from v0 → v1500, 0 rejected.
+Skynet wins 16% → 45% (first vs last 150); bot wins 26 → 7 of 150 (round 3 boss: 59 of 150);
+rest are 120 s timeouts, ~half of fights reach phase 2. Last 300 fights: waits 20%, moves
+26%, 10 moves in regular use, top move 11%.
+
 ## Sleep · ~3:30 → 8:00 AM
 
 ---
