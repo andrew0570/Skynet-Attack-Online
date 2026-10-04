@@ -25,7 +25,7 @@ const backups = readdirSync(dir)
   .sort((a, b) => a.run - b.run);
 
 const title = round ? `Skynet Training Round ${round}` : 'Skynet Bot Training';
-const data = { stats: training.stats, backups, generatedAt: new Date().toLocaleString(), title, round };
+const data = { stats: training.stats, armLabels: training.armLabels ?? null, backups, generatedAt: new Date().toLocaleString(), title, round };
 const template = readFileSync(join(process.cwd(), 'tools', 'training-report.html'), 'utf8');
 const out = join(dir, round ? `skynet-training-round${round}.html` : 'skynet-training.html');
 writeFileSync(out, template.replace('<title>Skynet Bot Training</title>', `<title>${title}</title>`).replace('__DATA__', JSON.stringify(data)));

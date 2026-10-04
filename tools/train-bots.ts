@@ -5,7 +5,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  ARMS,
+  armLabel,
   createFight,
+  describeStyle,
   generateArena,
   learnedBrain,
   mulberry32,
@@ -89,6 +92,10 @@ interface RunStat {
   meanReward: number;
   policyVersion: number;
   accepted: boolean;
+  /** How many times Skynet picked each arm this fight (index = arm). */
+  armUse: number[];
+  /** Skynet's read of the bot's style at the end of the fight. */
+  read: string;
 }
 const stats: RunStat[] = [];
 
@@ -139,6 +146,8 @@ for (let run = 1; run <= RUNS; run++) {
     meanReward: sub.rewards.length ? sub.rewards.reduce((s, r) => s + r, 0) / sub.rewards.length : 0,
     policyVersion: policy.version,
     accepted,
+    armUse: ARMS.map((_, i) => sub.arms.filter(a => a === i).length),
+    read: describeStyle(f.style).label,
   });
 
   if (run % 10 === 0) {
@@ -151,7 +160,7 @@ for (let run = 1; run <= RUNS; run++) {
     );
   }
   if (run % BACKUP_EVERY === 0 || run === RUNS) console.log(`  backup → ${backup(run)}`);
-  writeFileSync(join(OUT, `training-${ROUND}.json`), JSON.stringify({ startedAt: STAMP, round: ROUND, runs: RUNS, stats }, null, 1));
+  writeFileSync(join(OUT, `training-${ROUND}.json`), JSON.stringify({ startedAt: STAMP, round: ROUND, runs: RUNS, armLabels: ARMS.map(armLabel), stats }, null, 1));
 }
 
 const rejected = stats.filter(s => !s.accepted).length;

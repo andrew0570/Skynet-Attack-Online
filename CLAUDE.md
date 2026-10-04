@@ -82,7 +82,10 @@ Schedule and done-criteria: [docs/milestones.md](docs/milestones.md).
 - **Client (`client/`, `@sao/client`):** renders the sim with Three.js, reads input,
   subscribes to the policy, submits the fight log at fight end.
 - **Brain (`sim/src/brain.ts`):** LinUCB features/model/validation shared by client, server,
-  and bots. Design: docs/design.md §2c.
+  and bots, plus `describeStyle` / `explainDecision` / `ARCHETYPES` for the HUD panels.
+  Design: docs/design.md §2c (brain) and §2d (moveset 2.0: play-style profile, mobility,
+  style counters). Changing `ARMS` or the features changes the model shape: `npm run db:reset`
+  (back up first) and retrain.
 - **Server (`server/`, `@sao/server`):** SpacetimeDB TypeScript module (imports `@sao/sim`).
   Tables: player (consent, rate limit), policy_meta, policy_arm, fight, policy_snapshot.
   `submit_fight` validates the whole fight, then trains and bumps the version. Only the
@@ -145,8 +148,10 @@ Run from the repo root after `. .\env.ps1`:
 | `npm run sim:smoke` | Headless movement checks for `sim/` (run after touching `sim/`) |
 | `npm run test:browser` | Drives the real client in headless Edge (needs `npm run dev`). `SAO_SLOW_CLOCK=1` simulates a high-refresh display; `SAO_SKILLS=1` tests skills; `SAO_BRAIN=1` tests the full learning loop (needs the DB); `SAO_URL` overrides the page |
 | `npx tsx tools/db-smoke.ts` | End-to-end brain test against the local DB: consent, validation, rate limit, training |
-| `npm run train:bots` | Bot training through the real server (`RUNS`, `BACKUP_EVERY` env; defaults 250 / 50) |
-| `npm run train:report` | Builds `backups/skynet-training.html` from the newest training run |
+| `npm run train:bots` | Bot training through the real server (`RUNS`, `BACKUP_EVERY`, `ROUND` env; defaults 250 / 50) |
+| `npx tsx tools/train-offline.ts 300` | Dry-run bots vs a local brain (no DB): per-style habits, wins, move mix — run before a real round after changing moves/bots |
+| `npm run train:report` | Builds `backups/skynet-training.html` from the newest training run (`-- --round N` for a named round) |
+| `npx tsx tools/screenshot.ts "?autoplay&notrain" out.png 5000` | Screenshot the running client in headless Edge (`?learned` shows the Tab panel) |
 | `npm run brain:backup` | Backs up the current brain to `backups/`; `-- --v0` writes the untrained v0 brain |
 | `npm run db:reset` | Wipes the local DB and republishes (fresh v0 brain) — back up first |
 | `npx tsc --noEmit -p server` | Type-check the server module (`spacetime build` skips it) |

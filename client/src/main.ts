@@ -23,7 +23,21 @@ import {
   type PlayerInput,
   type Vec3,
 } from '@sao/sim';
-import { learnedBrain, resolveDecisions, toSubmission, type Brain, type FightSubmission } from '@sao/sim';
+import {
+  ARCHETYPES,
+  armLabel,
+  describeStyle,
+  explainDecision,
+  learnedBrain,
+  predict,
+  resolveDecisions,
+  styleFeatures,
+  toSubmission,
+  type Brain,
+  type FightEvent,
+  type FightSubmission,
+  type Policy,
+} from '@sao/sim';
 import { createArenaMeshes } from './arenaMesh';
 import { connectBrain } from './net';
 import { ThirdPersonCamera } from './camera';
@@ -106,7 +120,125 @@ const ui = {
   vignette: el('vignette'),
   result: el('result'),
   resultTitle: el('result-title'),
+  callout: el('callout'),
+  calloutName: el('callout-name'),
+  calloutWhy: el('callout-why'),
+  calloutHint: el('callout-hint'),
+  read: el('read'),
+  readStyle: el('read-style'),
+  readTraits: el('read-traits'),
+  readHabits: el('read-habits'),
+  readMove: el('read-move'),
+  readWhy: el('read-why'),
+  learned: el('learned'),
+  learnedSub: el('learned-sub'),
+  learnedRows: el('learned-rows'),
 };
+
+// ---- Showing the learning: style read, decision reasons, counter-move callouts ----
+const HABITS = ['Range', 'Cover', 'Airborne', 'Pillar', 'On the move', 'Melee', 'Skills', 'Dashing'];
+const habitBars = HABITS.map(name => {
+  const label = document.createElement('div');
+  label.className = 'h';
+  label.textContent = name;
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  const fill = document.createElement('div');
+  bar.appendChild(fill);
+  ui.readHabits.append(label, bar);
+  return fill;
+});
+
+/** Callouts for the moves that exist to counter a play style, and for repositioning. */
+const CALLOUTS: Record<string, { name: string; hint: string; move?: boolean }> = {
+  reflect: { name: 'REFLECT SHIELD', hint: 'Beams and blades bounce back — hold your fire' },
+  feint: { name: 'FEINT', hint: 'A fake wind-up to bait your dodge' },
+  drones: { name: 'HUNTER DRONES', hint: 'They phase through walls — cut them down' },
+  laser: { name: 'SWEEPING LASER', hint: 'Change range or jump — strafing will not escape it' },
+  hunt: { name: 'HUNTING', hint: 'Skynet left its perch to close in', move: true },
+  flank: { name: 'FLANKING', hint: 'Skynet is moving for a clear shot', move: true },
+  rise: { name: 'ASCENDING', hint: 'Skynet climbs for a better angle', move: true },
+  retreat: { name: 'RETREATING', hint: 'Skynet returns to its perch', move: true },
+};
+let calloutTimer = 0;
+/** Why Skynet made its latest decision (from the frozen policy it is fighting with). */
+let lastWhy = '';
+
+function showCallout(key: string): void {
+  const c = CALLOUTS[key];
+  if (!c) return;
+  ui.calloutName.textContent = c.name;
+  ui.calloutWhy.textContent = lastWhy;
+  ui.calloutHint.textContent = c.hint;
+  ui.callout.className = c.move ? 'move' : '';
+  calloutTimer = c.move ? 1.4 : 2.2;
+}
+
+function handleCallouts(events: FightEvent[]): void {
+  for (const e of events) {
+    // A Feint's wind-up is disguised as a volley, so it's only called out when it springs.
+    if (e.type === 'telegraph' && e.attack !== 'volley') showCallout(e.attack);
+    if (e.type === 'fire' && e.attack === 'feint') showCallout('feint');
+    if (e.type === 'move') showCallout(e.move);
+  }
+}
+
+/** Explain each new (non-wait) decision in the read panel. */
+let explained = 0;
+function explainNewDecisions(): void {
+  while (explained < fight.decisions.length) {
+    const d = fight.decisions[explained++];
+    const arm = ARMS[d.arm];
+    if (arm.kind === 'wait') continue;
+    ui.readMove.textContent = armLabel(arm);
+    if (!fightPolicy) {
+      lastWhy = '';
+      ui.readWhy.textContent = 'Local AI (offline) — not learning';
+      continue;
+    }
+    const reasons = explainDecision(fightPolicy, d.context, d.arm).map(r => r.text);
+    lastWhy = reasons.length ? `because ${reasons.join(' and ')}` : '';
+    ui.readWhy.textContent = reasons.length ? lastWhy : fightPolicy.version === 0 ? 'Untrained — exploring at random' : 'Exploring: trying something new';
+  }
+}
+
+let readTimer = 0;
+function updateRead(dt: number): void {
+  readTimer -= dt;
+  if (readTimer > 0) return;
+  readTimer = 0.2;
+  const read = describeStyle(fight.style);
+  ui.readStyle.textContent = fight.time < 8 ? 'READING…' : read.label.toUpperCase();
+  ui.readTraits.textContent = fight.time < 8 ? '' : read.traits.join(' · ');
+  styleFeatures(fight.style).forEach((v, i) => (habitBars[i].style.width = `${Math.min(1, v) * 100}%`));
+}
+
+/** Hold Tab: each archetype's best moves under the latest shared brain vs. the untrained v0. */
+let learnedKey = -2;
+function renderLearned(): void {
+  const policy = net.snapshotPolicy();
+  const youAre = describeStyle(fight.style).label;
+  const key = (policy?.version ?? -1) * 100 + ARCHETYPES.findIndex(a => a.label === youAre);
+  if (key === learnedKey) return;
+  learnedKey = key;
+  ui.learnedSub.textContent = policy ? `Shared brain v${policy.version} · trained on ${net.status.fights} fights` : 'Offline — connect to the shared brain to see what it has learned.';
+  const rows: string[] = ['<div class="head">AGAINST A…</div><div class="head">AT V0</div><div class="head">NOW — TOP MOVES</div>'];
+  for (const a of ARCHETYPES) {
+    const ranked = policy
+      ? ARMS.map((arm, i) => ({ arm, v: predict(policy.arms[i], a.context) }))
+          .filter(x => x.arm.kind !== 'wait')
+          .sort((x, y) => y.v - x.v)
+          .slice(0, 3)
+      : [];
+    const now = ranked.length
+      ? ranked
+          .map(x => `<span>${armLabel(x.arm)}</span><div class="bar"><div class="${x.v < 0 ? 'neg' : ''}" style="width:${Math.min(100, (Math.abs(x.v) / 0.5) * 100)}%"></div></div><span class="v">${x.v >= 0 ? '+' : ''}${x.v.toFixed(2)}</span>`)
+          .join('')
+      : '<span>—</span><span></span><span></span>';
+    rows.push(`<div class="who${a.label === youAre ? ' you' : ''}"><b>${a.label.toUpperCase()}</b><span>${a.blurb}</span></div><div class="v0">No preference — random pick</div><div class="now">${now}</div>`);
+  }
+  ui.learnedRows.innerHTML = rows.join('');
+}
 
 // Consent: asked once per browser; the answer is remembered so a reset server gets re-told.
 const CONSENT_KEY = 'sao.consent';
@@ -146,6 +278,8 @@ const peace: Brain = () => 0; // ?peace: always "wait"
 let brain: Brain = heuristicBrain;
 /** Shared-brain version this fight is using, or -1 (local AI / peace: never submitted). */
 let fightPolicyVersion = -1;
+/** The frozen policy this fight is using (null: local AI / peace). */
+let fightPolicy: Policy | null = null;
 let fightStarted = false;
 let submitted = false;
 let fightSeed = 1;
@@ -155,6 +289,11 @@ function newFight() {
   f.player.pos = { x: spawnX, y: heightAt(spawnX, spawnZ), z: spawnZ };
   fightStarted = false;
   submitted = false;
+  explained = 0;
+  lastWhy = '';
+  calloutTimer = 0;
+  ui.readMove.textContent = '—';
+  ui.readWhy.textContent = '';
   return f;
 }
 
@@ -164,6 +303,7 @@ function startFight(): void {
   const policy = params.has('peace') ? null : net.snapshotPolicy();
   brain = params.has('peace') ? peace : policy ? learnedBrain(policy) : heuristicBrain;
   fightPolicyVersion = policy ? policy.version : -1;
+  fightPolicy = policy;
 }
 
 /** Send a finished (or abandoned) fight to train the shared brain. */
@@ -263,6 +403,8 @@ renderer.setAnimationLoop(() => {
     Object.assign(prevBoss, fight.boss.pos);
     const events = stepFight(fight, arena, readInput(), SIM_DT, brain);
     fx.handle(events, fight);
+    explainNewDecisions();
+    handleCallouts(events);
     for (const e of events) {
       if (e.type === 'playerHit') hurtFlash = 1;
       if (e.type === 'bossHit') skynet.hit(e.damage);
@@ -341,6 +483,14 @@ renderer.setAnimationLoop(() => {
   ui.result.className = fight.outcome === 'active' ? 'hidden' : fight.outcome;
   ui.resultTitle.textContent = fight.outcome === 'won' ? 'SKYNET DEFEATED' : fight.outcome === 'lost' ? 'TERMINATED' : '';
   ui.resultNote.textContent = submitted ? 'Skynet is learning from this fight.' : '';
+  calloutTimer = Math.max(0, calloutTimer - frameDt);
+  ui.callout.classList.toggle('hidden', calloutTimer <= 0 || params.has('shot'));
+  updateRead(frameDt);
+  ui.read.classList.toggle('hidden', params.has('shot'));
+  // Hold Tab (or ?learned for screenshots): what the shared brain has learned.
+  const showLearned = input.isHeld('Tab') || params.has('learned');
+  if (showLearned) renderLearned();
+  ui.learned.classList.toggle('hidden', !showLearned);
 
   // Brain status under Skynet's name.
   const s = net.status;

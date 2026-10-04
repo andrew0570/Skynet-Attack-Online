@@ -49,6 +49,21 @@ Skynet picks every attack using a **learned policy shared by the whole player co
 - The updated brain goes to every player right away. The Skynet you fight tonight has learned
   from everyone who fought it before you.
 
+Skynet doesn't just aim better over time; it learns to counter **how you play**:
+
+- It keeps a running profile of your habits: how far away you fight, how much you hide, how
+  often you dash, swing, sprint, or use skills. A panel shows its read on you ("CAMPER: hidden
+  71% of the time").
+- It has 24 moves to choose from, including counters it only uses once it has learned they
+  work. **Hunter Drones** phase through walls to reach campers. A **Reflect Shield** bounces
+  sword beams back at snipers and punishes button-mashing brawlers. A **Feint** fakes a volley
+  to bait your dodge. A **Sweeping Laser** rakes the open ground where strafers run.
+- It leaves its perch to **hunt** you down, **flank** around cover for a clear shot, rise,
+  or retreat.
+- Every counter-move is called out on screen with Skynet's reason, for example "HUNTER DRONES:
+  because you hide in cover". Hold Tab to see what the community has taught it: its best
+  moves against each kind of player, next to the untrained version that picked at random.
+
 The longer people play, the harder Skynet gets. Beating it takes a community, not a single
 hero.
 
@@ -64,9 +79,14 @@ hero.
 - **Shared simulation:** all combat rules and AI logic live in one pure-TypeScript package
   with no rendering code. The browser, the game server, and the overnight training bots all
   run the same code.
-- **Boss AI:** a contextual bandit (LinUCB). Before each attack, Skynet reads the situation
-  (distance, your movement, health, your dodge habits) and picks the move it expects to work
-  best, while still trying new ones.
+- **Boss AI:** a contextual bandit (LinUCB) with 25 options and 29 inputs. Before each move,
+  Skynet reads the situation (distance, cover, your movement, health, cooldowns) and your
+  play-style profile, then picks the move it expects to work best, while still trying new
+  ones. Because the model is linear, every choice can be explained: the HUD shows which of
+  your habits pushed Skynet toward it.
+- **Training:** five scripted bot styles (brawler, kiter, camper, dodger, sniper) fought it
+  1,500 times through the real server before the event, so Skynet arrives with counters
+  already learned, and human fights keep refining them.
 - **Backend:** [SpacetimeDB](https://spacetimedb.com/) stores the boss's brain, the fight
   history, and the training data. Every fight log is checked on the server before it can
   change the model, and every player stays in sync with the latest version.
@@ -104,6 +124,7 @@ _TODO_
 | Blade Rush (charge through, slashing) | 2 |
 | Sword Beam (laser toward the reticle) | 3 |
 | Climb | Push into glowing vines; jump to kick off |
+| What Skynet has learned | Hold Tab |
 
 ## Data and consent
 

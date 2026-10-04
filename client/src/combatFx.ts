@@ -10,7 +10,13 @@ const PROJECTILE_LOOK: Record<ProjectileKind, { geo: THREE.BufferGeometry; mat: 
   bolt: { geo: new THREE.SphereGeometry(0.35, 10, 8), mat: new THREE.MeshBasicMaterial({ color: hdr(1, 0.25, 0.05, 6) }) },
   orb: { geo: new THREE.IcosahedronGeometry(0.6, 1), mat: new THREE.MeshBasicMaterial({ color: hdr(1, 0.1, 0.45, 5) }) },
   shell: { geo: new THREE.SphereGeometry(0.5, 10, 8), mat: new THREE.MeshBasicMaterial({ color: hdr(1, 0.5, 0.1, 5) }) },
+  /** Hunter drone: a spinning violet octahedron (it phases through walls, so it must read clearly). */
+  drone: { geo: new THREE.OctahedronGeometry(0.7, 0), mat: new THREE.MeshBasicMaterial({ color: hdr(0.8, 0.2, 1, 5), wireframe: true }) },
 };
+
+/** Sweeping Laser: unit-length beam along +Z (scaled to the beam length each frame). */
+const LASER_CORE = new THREE.CylinderGeometry(0.18, 0.18, 1, 8).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+const LASER_GLOW = new THREE.CylinderGeometry(0.7, 0.7, 1, 10).rotateX(Math.PI / 2).translate(0, 0, 0.5);
 
 /** Sword beam: a long cyan lance oriented along its velocity (+Z). */
 const BEAM_GEO = new THREE.CylinderGeometry(0.16, 0.16, 3.2, 8).rotateX(Math.PI / 2);
@@ -47,6 +53,13 @@ export function createCombatFx(scene: THREE.Scene): CombatFx {
   root.add(aimLine);
   let aimTarget: Vec3 | null = null;
 
+  const laser = new THREE.Group();
+  const laserGlowMat = additive(hdr(1, 0.15, 0.05, 2), 0.5);
+  laser.add(new THREE.Mesh(LASER_CORE, new THREE.MeshBasicMaterial({ color: hdr(1, 0.6, 0.4, 8) })), new THREE.Mesh(LASER_GLOW, laserGlowMat));
+  laser.visible = false;
+  root.add(laser);
+  let scorchTimer = 0;
+
   const fx = {
     shake: 0,
     handle,
@@ -58,6 +71,7 @@ export function createCombatFx(scene: THREE.Scene): CombatFx {
       effects = [];
       aimLine.visible = false;
       aimTarget = null;
+      laser.visible = false;
     },
   };
 
@@ -110,7 +124,7 @@ export function createCombatFx(scene: THREE.Scene): CombatFx {
         case 'telegraph':
           if (e.attack === 'dive') groundMarker(e.markers[0], 7, ATTACKS.dive.telegraph + ATTACKS.dive.active);
           else if (e.attack === 'mortar' && e.markers.length) for (const m of e.markers) groundMarker(m, 4.5, 2.6);
-          else if (e.attack === 'volley' || e.attack === 'spread' || e.attack === 'homing') {
+          else if (e.attack === 'volley' || e.attack === 'spread' || e.attack === 'homing' || e.attack === 'laser') {
             aimTarget = e.aim;
             aimLine.visible = true;
           }
@@ -160,6 +174,14 @@ export function createCombatFx(scene: THREE.Scene): CombatFx {
           break;
         case 'rush':
           fx.shake = Math.max(fx.shake, 0.2);
+          break;
+        case 'reflected':
+          // Gold flash off the shield (it bounced your attack).
+          burst(e.pos, 6, hdr(1, 0.8, 0.3, 3), 0.3);
+          fx.shake = Math.max(fx.shake, 0.3);
+          break;
+        case 'droneDestroyed':
+          burst(e.pos, 1.8, hdr(0.8, 0.3, 1, 4), 0.3);
           break;
       }
     }
@@ -232,6 +254,9 @@ export function createCombatFx(scene: THREE.Scene): CombatFx {
       if (p.kind === 'bolt') {
         mesh.lookAt(p.pos.x + p.vel.x, p.pos.y + p.vel.y, p.pos.z + p.vel.z);
         mesh.scale.set(1, 1, 3.2);
+      } else if (p.kind === 'drone') {
+        mesh.rotation.set(time * 5 + p.id, time * 7, 0);
+        mesh.scale.setScalar(1 + 0.15 * Math.sin(time * 20 + p.id));
       } else if (p.kind === 'orb') {
         mesh.scale.setScalar(1 + 0.25 * Math.sin(time * 14 + p.id));
         mesh.rotation.set(time * 3, time * 2, 0);
@@ -268,6 +293,21 @@ export function createCombatFx(scene: THREE.Scene): CombatFx {
       aimLineMat.opacity = 0.4 + 0.5 * Math.abs(Math.sin(time * 20));
     } else {
       aimLine.visible = false;
+    }
+
+    // Sweeping Laser beam, with a scorch burst where it meets the ground.
+    laser.visible = !!b.laserDir;
+    if (b.laserDir) {
+      const d = b.laserDir;
+      laser.position.set(b.pos.x, b.pos.y, b.pos.z);
+      laser.lookAt(b.pos.x + d.x, b.pos.y + d.y, b.pos.z + d.z);
+      laser.scale.set(1, 1, b.laserLen);
+      laserGlowMat.opacity = 0.35 + 0.2 * Math.sin(time * 50);
+      scorchTimer -= dt;
+      if (scorchTimer <= 0) {
+        scorchTimer = 0.05;
+        burst({ x: b.pos.x + d.x * b.laserLen, y: b.pos.y + d.y * b.laserLen, z: b.pos.z + d.z * b.laserLen }, 1.6, hdr(1, 0.3, 0.05, 3), 0.25);
+      }
     }
 
     effects = effects.filter(e => {

@@ -68,9 +68,10 @@ Use **Three.js** in the browser:
   - Blade Sweep — ring AoE around Skynet (close range)
   - Dive Slam — dives onto the target, shockwave AoE, then **stunned 2.4 s (1.5× damage)**
 - Bolts/orbs are blocked by walls and roofs (`raycast`); mortars are the anti-camping tool.
-- **Decision = arm** (17): wait 0.6 s / wait 1.6 s, or attack × aim mode
-  (direct / lead / flank — flank offsets toward the player's last dodge side). The brain
-  chooses frequency (by waiting) and aim; energy enforces the hard limit.
+- **Decision = arm** (25 since moveset 2.0, §2d): wait 0.5 s, attack × aim mode
+  (direct / lead / flank — flank offsets toward the player's last dodge side), or a
+  repositioning move. The brain chooses frequency (by waiting), aim, and position; energy
+  enforces the hard limit.
 - **Player vitals** (`VITALS`, `STAMINA` in config.ts): **armor** 50 absorbs damage first and
   regenerates 5/s after 4 s unhit; **health** 100 never regenerates (0 = defeat); **stamina**
   100 regenerates 32/s after a 0.5 s pause — only on the ground or while climbing vines, never
@@ -93,18 +94,23 @@ Use **Three.js** in the browser:
   cached A⁻¹ and θ. Update: A ← γA + (1−γ)λI + xxᵀ, b ← γb + r·x, then recompute A⁻¹ exactly
   (d = 20: ~8k flops) — forgetting (γ ≈ 0.999) without the numerical drift of rank-1 inverse
   updates. Deterministic: same weights + context ⇒ same choice.
-- **Arms (16):** wait 0.5 s · {volley, spread, homing, mortar} × {direct, lead, flank} ·
-  sweep · dive × {direct, lead}. Validity: energy affordable; sweep only when close; dive ≤ 75 m.
-- **Context (20, normalized):** bias · distance · height diff · player visible · under roof ·
+- **Arms (25, moveset 2.0 — see §2d):** wait 0.5 s · {volley, spread, homing, mortar} ×
+  {direct, lead, flank} · sweep · dive × {direct, lead} · reflect · feint × {lead, flank} ·
+  drones · laser (lead) · move × {hunt, flank, rise, retreat}. Validity: energy affordable;
+  sweep only when close; dive ≤ 75 m; hunt only when not already close; rise below max
+  altitude; retreat only when off the perch. (M4 shipped the first 16.)
+- **Context (29, normalized):** bias · distance · height diff · player visible · under roof ·
   horizontal speed · closing speed · airborne · climbing · stamina · can-dodge-now · health ·
   armor · lightning/rush/beam ready · Skynet energy · Skynet HP · Skynet projectiles in flight ·
-  player's recent dodge rate.
+  player's recent dodge rate · Skynet away from perch · **8 play-style habits** (§2d).
 - **Cadence:** a decision whenever Skynet is free — after an attack's recovery + 0.5 s pause,
   or 0.5 s after a wait (≈ every 0.5 s while holding back).
 - **Reward (HP-fraction):** `clip(dealt/30 − taken/240 − 0.1·cost/40, −1, 1)`. *Dealt* = damage
   from the projectiles/hits that decision caused (even if they land later); *taken* = damage
   Skynet takes from that decision until the next. Scored once its window ended and all its
   projectiles resolved (all forced at fight end). No win/loss term (win rate is the metric).
+  **Moves** deal no damage themselves, so a move also earns 0.6 × the reward of the decision
+  right after it (the attack it set up) — otherwise a one-step bandit would never reposition.
 - **Where it runs:** choices in the client's sim with weights **frozen at fight start** (the
   version shown on screen). At fight end the client calls `submit_fight` with every
   (context, arm, reward); the server **validates the whole fight first**, then applies all
@@ -114,6 +120,34 @@ Use **Three.js** in the browser:
   fight; arm ids valid; contexts finite, in range, bias = 1; rewards in [−1, 1]; ≥ 5 s between
   submissions per identity. Rejected fights are recorded with a reason, never learned from.
   **Stretch (M5):** server replays the fight from seed + input log (the sim is deterministic).
+
+## 2d. Moveset 2.0 — adapting to play styles (built Sun ~2–3 AM)
+
+Goal: make Skynet's learning visible as *counters to how you play*, not just better aim.
+- **Play-style profile** (`fight.style`, rolling ~20 s memory, `updateStyle` in combat.ts):
+  average range · share of time hidden from Skynet · airborne · on the pillar top · moving
+  fast (> 12 m/s) · close sword swings / min · skills / min · dashes / min. These are the 8
+  "habit" features, so the bandit learns *style → best move*. `describeStyle` labels the
+  dominant habit: Sniper · Camper · Brawler · Pillar climber · Dodger · Aerialist · Runner.
+- **Mobility** (move arms, 6 energy, flown at 24 m/s, 0.35–2 s): **Hunt** (hover 7 m from you,
+  inside Blade Sweep range) · **Flank** (nearest point 20 m around you with line of sight) ·
+  **Rise** (+12 m) · **Retreat** (back to the perch). Hover height clears fortress roofs.
+  Dive Slam now returns to wherever Skynet dove from.
+- **Style counters:** **Reflect Shield** (1.6 s; sword beams bounce back for 30, sword/rush
+  hits do 15 + knockback, lightning is absorbed — vs beam spammers and brawlers) ·
+  **Feint** (wind-up identical to Bolt Volley, 0.35 s pause to bait the dash, then 3 bolts at
+  70 m/s — vs reactive dodgers) · **Hunter Drones** (2 slow homing drones that phase through
+  walls; a sword swing or beam destroys them — vs campers) · **Sweeping Laser** (beam sweeps
+  a ±0.6 rad arc in 1 s; pitch locks onto waist height at your predicted range, so changing
+  range or jumping slips it while strafing sideways doesn't; walls block it — vs kiters).
+- **Showing it:** "Skynet's read on you" panel (style label, habit bars, last decision and
+  *why* — `explainDecision`: the features whose θⱼ·(xⱼ − typical) most raised that move's
+  score) · callouts naming each counter / repositioning move with the reason · hold **Tab**
+  for "What Skynet has learned": the top 3 moves the live brain predicts against five
+  archetype players (`ARCHETYPES`), vs. v0 where every move scored 0.
+- **Bots:** five styles (aggressor, kiter, hider under fortress roofs, dodger that pre-dodges
+  volley wind-ups, sniper at 55–75 m). Skilled bots hold fire into a shield; drone swats are
+  skill-limited. `tools/train-offline.ts` dry-runs a round without the DB.
 
 ## 3. AI algorithm
 ### What the AI controls

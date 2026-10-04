@@ -9,7 +9,7 @@ export class Input {
   constructor(private target: HTMLElement) {
     window.addEventListener('keydown', e => {
       // Swallow browser shortcuts while playing (Esc still releases pointer lock natively).
-      if (this.locked) e.preventDefault();
+      if (this.locked || e.code === 'Tab') e.preventDefault(); // Tab shows the learned panel
       if (!e.repeat) this.pressed.add(e.code);
       this.held.add(e.code);
     });

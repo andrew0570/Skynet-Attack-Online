@@ -109,6 +109,20 @@
   .backups .run { color: var(--ink); }
   @media (max-width: 520px) { .backups li { grid-template-columns: 1fr 1fr; } .backups .file { grid-column: 1 / -1; } }
 
+  .adapt { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .adapt .panel { padding: 14px 16px; display: grid; gap: 10px; }
+  .adapt h3 { margin: 0; font: 600 1rem/1.2 var(--font-display); letter-spacing: 0.04em; text-transform: capitalize; display: flex; justify-content: space-between; gap: 10px; }
+  .adapt h3 small { font: 500 0.78rem/1.2 var(--font-data); color: var(--muted); text-transform: none; letter-spacing: 0; }
+  .shift { display: grid; grid-template-columns: 8.5rem 1fr 6.2rem; gap: 10px; align-items: center; font-size: 0.86rem; }
+  .shift .name { color: var(--ink-2); }
+  .shift .track { position: relative; height: 14px; }
+  .shift .track::before { content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 2px; background: var(--rule); border-radius: 1px; }
+  .shift .seg { position: absolute; top: 6px; height: 2px; background: var(--axis); }
+  .shift .dot { position: absolute; top: 2px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+  .shift .dot.a { background: var(--timeout); }
+  .shift .dot.b { background: var(--skynet); }
+  .shift .v { font-family: var(--font-data); font-size: 0.8rem; text-align: right; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .adapt .outcome { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 8px; }
   footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); padding-top: 14px; max-width: 72ch; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
@@ -149,8 +163,17 @@
     </div>
   </section>
 
+  <section id="adapt-section" hidden>
+    <div class="section-head">
+      <h2>How Skynet adapted to each style</h2>
+      <div class="legend"><span><i style="background: var(--timeout)"></i><span id="adapt-first"></span></span><span><i style="background: var(--skynet)"></i><span id="adapt-last"></span></span></div>
+    </div>
+    <p class="note">Share of Skynet's actions (excluding waits) that went to each move. Each panel lists the moves Skynet leaned on most by the end, and how often it used them at the start. "Read as" is how often Skynet's play-style profile labeled that bot correctly by the end of a fight.</p>
+    <div class="adapt" id="adapt"></div>
+  </section>
+
   <section>
-    <div class="section-head"><h2>By bot style</h2><p class="note">Bot styles rotate aggressor → kiter → hider → dodger every run.</p></div>
+    <div class="section-head"><h2>By bot style</h2><p class="note" id="style-note"></p></div>
     <div class="table-wrap"><table>
       <thead><tr><th>Bot style</th><th>Skynet wins (all)</th><th id="style-head-a"></th><th id="style-head-b"></th><th id="style-head-c"></th><th id="style-head-d"></th></tr></thead>
       <tbody id="style-rows"></tbody>
@@ -205,7 +228,7 @@ const rejected = DATA.stats.filter(s => !s.accepted).length;
 const v0 = DATA.stats[0].policyVersion, v1 = DATA.stats[totalRuns - 1].policyVersion + 1;
 
 document.getElementById('lede').textContent =
-  `${totalRuns} automated fights against four styles of bot player, each one validated and learned from by the shared brain in SpacetimeDB. ` +
+  `${totalRuns} automated fights against ${new Set(DATA.stats.map(s => s.style)).size} styles of bot player, each one validated and learned from by the shared brain in SpacetimeDB. ` +
   `The brain went from v${v0} to v${v1}. Skynet won ${skyWins} of ${totalRuns} fights; ${rejected === 0 ? 'no fights were rejected' : rejected + ' were rejected by validation'}.`;
 
 const fig = [
@@ -217,13 +240,49 @@ const fig = [
 document.getElementById('figures').innerHTML = fig.map(([l, v, d]) =>
   `<div class="figure"><span class="label">${l}${l === 'Brain version' ? '' : ` · last ${WIN_RUNS}`}</span><span class="value">${v}</span><span class="delta">${d}</span></div>`).join('');
 
+// How the move mix shifted per bot style (rounds that logged per-fight arm usage).
+(function adapt() {
+  if (!DATA.armLabels || !DATA.stats[0].armUse) return;
+  document.getElementById('adapt-section').hidden = false;
+  const n = DATA.stats.length, w = Math.min(Math.max(150, WIN_RUNS), Math.floor(n / 2));
+  const head = DATA.stats.slice(0, w), tail = DATA.stats.slice(-w);
+  document.getElementById('adapt-first').textContent = `First ${w} fights`;
+  document.getElementById('adapt-last').textContent = `Last ${w} fights`;
+  const EXPECT = { aggressor: 'Brawler', kiter: 'Runner', hider: 'Camper', dodger: 'Dodger', sniper: 'Sniper' };
+  const share = (arr, st) => {
+    const use = DATA.armLabels.map((_, i) => arr.filter(s => s.style === st).reduce((a, s) => a + s.armUse[i], 0));
+    use[0] = 0; // waits
+    const total = use.reduce((a, b) => a + b, 0) || 1;
+    return use.map(u => u / total);
+  };
+  const names = [...new Set(DATA.stats.map(s => s.style))];
+  const rows = names.map(st => ({ st, a: share(head, st), b: share(tail, st) }));
+  const top = rows.map(r => r.b.map((v, i) => ({ i, v })).sort((x, y) => y.v - x.v).slice(0, 4));
+  const max = Math.max(0.2, ...rows.flatMap((r, k) => top[k].flatMap(t => [r.a[t.i], r.b[t.i]])));
+  const scale = Math.ceil(max * 10) / 10;
+  const rate = (arr, st) => { const a = arr.filter(s => s.style === st); return a.length ? a.filter(s => s.outcome === 'skynet').length / a.length : 0; };
+  document.getElementById('adapt').innerHTML = rows.map((r, k) => {
+    const lastFights = tail.filter(s => s.style === r.st);
+    const readOk = EXPECT[r.st] ? lastFights.filter(s => s.read === EXPECT[r.st]).length / (lastFights.length || 1) : null;
+    const lines = top[k].map(({ i }) => {
+      const a = r.a[i] / scale * 100, b = r.b[i] / scale * 100;
+      return `<div class="shift" title="${DATA.armLabels[i]}: ${pct(r.a[i])} → ${pct(r.b[i])}"><span class="name">${DATA.armLabels[i]}</span>` +
+        `<span class="track"><span class="seg" style="left:${Math.min(a, b)}%;width:${Math.abs(b - a)}%"></span><span class="dot a" style="left:${a}%"></span><span class="dot b" style="left:${b}%"></span></span>` +
+        `<span class="v">${pct(r.a[i])} → ${pct(r.b[i])}</span></div>`;
+    }).join('');
+    const read = readOk === null ? '' : ` · read as ${EXPECT[r.st]} in ${pct(readOk)} of late fights`;
+    return `<div class="panel"><h3>vs ${r.st}<small>Skynet wins ${pct(rate(head, r.st))} → ${pct(rate(tail, r.st))}</small></h3>${lines}<div class="outcome">Scale 0–${pct(scale)} of actions${read}</div></div>`;
+  }).join('');
+})();
+
 // By bot style: first vs last window.
 (function styles() {
   const n = DATA.stats.length, w = Math.min(WIN_RUNS, Math.floor(n / 2));
   const head = DATA.stats.slice(0, w), tail = DATA.stats.slice(-w);
   const names = [...new Set(DATA.stats.map(s => s.style))];
+  document.getElementById('style-note').textContent = `Bot styles rotate ${names.join(' → ')} every run.`;
   const rate = (arr, st) => { const a = arr.filter(s => s.style === st); return a.length ? a.filter(s => s.outcome === 'skynet').length / a.length : 0; };
-  const dmg = (arr, st) => { const a = arr.filter(s => s.style === st); return a.length ? a.reduce((x, s) => x + s.skynetDamage, 0) / a.length : 0; };
+  const dmg =(arr, st) => { const a = arr.filter(s => s.style === st); return a.length ? a.reduce((x, s) => x + s.skynetDamage, 0) / a.length : 0; };
   document.getElementById('style-rows').innerHTML = names.map(st => {
     const total = DATA.stats.filter(s => s.style === st);
     const wins = total.filter(s => s.outcome === 'skynet').length;

@@ -22,7 +22,9 @@ export const BOSS = {
   stunnedMultiplier: 1.5,
 };
 
-export type AttackId = 'volley' | 'spread' | 'homing' | 'mortar' | 'sweep' | 'dive';
+export type AttackId = 'volley' | 'spread' | 'homing' | 'mortar' | 'sweep' | 'dive' | 'reflect' | 'feint' | 'drones' | 'laser';
+/** Repositioning moves: Skynet leaves (or returns to) its perch. */
+export type MoveId = 'hunt' | 'flank' | 'rise' | 'retreat';
 /** direct: where you are · lead: where you're heading · flank: lead, offset toward your usual dodge side. */
 export type AimMode = 'direct' | 'lead' | 'flank';
 
@@ -40,6 +42,29 @@ export const ATTACKS: Record<AttackId, AttackSpec> = {
   mortar: { cost: 30, telegraph: 0.6, active: 0.45, recover: 0.6 },
   sweep: { cost: 20, telegraph: 0.6, active: 0.3, recover: 0.6 },
   dive: { cost: 40, telegraph: 0.9, active: 0.7, recover: 2.4 },
+  // Style counters:
+  /** Shield that reflects sword beams and punishes melee (vs snipers and melee spammers). */
+  reflect: { cost: 25, telegraph: 0.25, active: 1.6, recover: 0.3 },
+  /** Looks like a volley wind-up, waits for the dodge, then fires fast (vs reactive dodgers). */
+  feint: { cost: 24, telegraph: 0.55, active: 0.75, recover: 0.4 },
+  /** Slow seekers that phase through walls; destroyable (vs campers). */
+  drones: { cost: 30, telegraph: 0.6, active: 0.3, recover: 0.5 },
+  /** A beam sweeping an arc across the player; walls block it (vs strafing kiters). */
+  laser: { cost: 30, telegraph: 0.7, active: 1.0, recover: 0.5 },
+};
+
+export const MOVES = {
+  cost: 6,
+  speed: 24,
+  /** Minimum altitude above the ground: open ground (glade/corridors) vs over the fortresses. */
+  minAltOpen: 6,
+  minAltFortress: 15,
+  /** Hunt: hover this far (horizontally) from the player — inside Blade Sweep range. */
+  huntRange: 7,
+  /** Flank: look for a sightline from this far away. */
+  flankRange: 20,
+  rise: 12,
+  maxAlt: 45,
 };
 
 const PROJ = {
@@ -51,9 +76,24 @@ const PROJ = {
 };
 const SWEEP = { range: 8.5, damage: 25, knockback: 18 };
 const DIVE = { aoe: 7, damage: 30, knockback: 16, hoverHeight: 2.2, returnTime: 1.0 };
+export const COUNTERS = {
+  /** Reflect: beams bounce back for this much; melee into the shield hurts and knocks back. */
+  reflectBeamDamage: 30,
+  reflectMeleeDamage: 15,
+  reflectKnockback: 16,
+  /** Feint: silent bait window after the fake wind-up, then fast bolts. */
+  feintDelay: 0.35,
+  feintShots: 3,
+  feintSpeed: 70,
+  drone: { count: 2, speed: 11, turn: 2.5, ttl: 9, damage: 15, radius: 0.55 },
+  laser: { arc: 0.6, range: 90, width: 1.0, damage: 20 },
+};
 
 /** One of Skynet's choices. The brain picks an arm index each time Skynet is ready to act. */
-export type Arm = { kind: 'wait'; duration: number } | { kind: 'attack'; attack: AttackId; aim: AimMode };
+export type Arm =
+  | { kind: 'wait'; duration: number }
+  | { kind: 'attack'; attack: AttackId; aim: AimMode }
+  | { kind: 'move'; move: MoveId };
 
 const AIMS: AimMode[] = ['direct', 'lead', 'flank'];
 export const ARMS: Arm[] = [
@@ -62,13 +102,33 @@ export const ARMS: Arm[] = [
   { kind: 'attack', attack: 'sweep', aim: 'direct' },
   { kind: 'attack', attack: 'dive', aim: 'direct' },
   { kind: 'attack', attack: 'dive', aim: 'lead' },
+  { kind: 'attack', attack: 'reflect', aim: 'direct' },
+  { kind: 'attack', attack: 'feint', aim: 'lead' },
+  { kind: 'attack', attack: 'feint', aim: 'flank' },
+  { kind: 'attack', attack: 'drones', aim: 'direct' },
+  { kind: 'attack', attack: 'laser', aim: 'lead' },
+  { kind: 'move', move: 'hunt' },
+  { kind: 'move', move: 'flank' },
+  { kind: 'move', move: 'rise' },
+  { kind: 'move', move: 'retreat' },
 ];
+
+/** Human-readable name for an arm (HUD, reports). */
+export function armLabel(arm: Arm): string {
+  if (arm.kind === 'wait') return 'Wait';
+  if (arm.kind === 'move') return { hunt: 'Hunt', flank: 'Flank for sight', rise: 'Rise', retreat: 'Retreat to perch' }[arm.move];
+  const name = {
+    volley: 'Bolt Volley', spread: 'Spread Shot', homing: 'Seeker Orbs', mortar: 'Mortar', sweep: 'Blade Sweep', dive: 'Dive Slam',
+    reflect: 'Reflect Shield', feint: 'Feint', drones: 'Hunter Drones', laser: 'Sweeping Laser',
+  }[arm.attack];
+  return ['reflect', 'drones', 'sweep'].includes(arm.attack) ? name : `${name} (${arm.aim})`;
+}
 
 // ---------------------------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------------------------
 
-export type BossPhase = 'idle' | 'telegraph' | 'active' | 'recover' | 'return';
+export type BossPhase = 'idle' | 'telegraph' | 'active' | 'recover' | 'return' | 'moving';
 
 export interface BossState {
   pos: Vec3;
@@ -86,11 +146,27 @@ export interface BossState {
   aim: Vec3;
   shotsFired: number;
   diveFrom: Vec3;
+  /** Where to return to after a Dive Slam (wherever it dove from). */
+  home: Vec3;
+  /** Flight path while repositioning. */
+  moveFrom: Vec3;
+  moveTo: Vec3;
+  moveTime: number;
+  /** Reflect Shield time remaining. */
+  shield: number;
+  /** Sweeping Laser: centre heading/pitch of the arc and the live beam (for rendering). */
+  laserYaw: number;
+  laserPitch: number;
+  /** Sweep direction (±1) and last tick's heading, for the swept hit test. */
+  laserSweep: number;
+  laserPrevYaw: number;
+  laserDir: Vec3 | null;
+  laserLen: number;
   /** Decision index (in fight.decisions) of the current action. */
   decision: number;
 }
 
-export type ProjectileKind = 'bolt' | 'orb' | 'shell';
+export type ProjectileKind = 'bolt' | 'orb' | 'shell' | 'drone';
 
 export interface Projectile {
   id: number;
@@ -107,9 +183,33 @@ export interface Projectile {
   homing: number;
   /** Mortar landing point (for ground markers). */
   target: Vec3 | null;
+  /** Passes through walls (hunter drones). */
+  phasing: boolean;
   /** Decision that fired it (credit for M4 rewards). */
   decision: number;
 }
+
+/**
+ * How the player has been playing, as exponential moving averages (~20 s memory). This is what
+ * lets the brain adapt to a *style* rather than only the current moment.
+ */
+export interface PlayStyle {
+  /** Average distance from Skynet (m). */
+  dist: number;
+  /** Fractions of time: hidden from Skynet, airborne, on the pillar top, moving fast (> 12 m/s). */
+  cover: number;
+  air: number;
+  pillar: number;
+  sprint: number;
+  /** Rates (per minute): sword swings near Skynet, skills used, dashes. */
+  melee: number;
+  skills: number;
+  dashes: number;
+}
+
+export const STYLE_MEMORY = 20;
+/** A "neutral" newcomer: also the baseline for explaining which habits drove a choice. */
+export const NEUTRAL_STYLE: PlayStyle = { dist: 40, cover: 0.2, air: 0.15, pillar: 0, sprint: 0.3, melee: 0, skills: 2, dashes: 4 };
 
 /** One Skynet decision and what came of it — the learning brain's training sample. */
 export interface Decision {
@@ -145,7 +245,10 @@ export type FightEvent =
   | { type: 'lightning'; pos: Vec3; hit: boolean }
   | { type: 'rush' }
   | { type: 'beamFired'; from: Vec3 }
-  | { type: 'beamImpact'; pos: Vec3; hitBoss: boolean };
+  | { type: 'beamImpact'; pos: Vec3; hitBoss: boolean }
+  | { type: 'move'; move: MoveId; to: Vec3 }
+  | { type: 'reflected'; pos: Vec3; what: 'beam' | 'melee' | 'lightning' | 'rush' }
+  | { type: 'droneDestroyed'; pos: Vec3 };
 
 /** Player's sword-beam projectile. */
 export interface PlayerShot {
@@ -183,6 +286,10 @@ export interface FightState {
   rushHitTimer: number;
   rushHits: number;
   shots: PlayerShot[];
+  /** The player's play style so far (rolling averages). */
+  style: PlayStyle;
+  /** Internal: last seen swing/dash counters and the visibility sample timer. */
+  styleTrack: { swings: number; dashing: boolean; losTimer: number; visible: boolean };
 }
 
 /**
@@ -215,6 +322,8 @@ export function createFight(arena: Arena, seed = 1): FightState {
     boss: {
       pos: { ...perch }, perch, hp: BOSS.maxHp, energy: BOSS.maxEnergy * 0.6, phase: 'idle', timer: 0,
       cooldown: 2, arm: -1, aim: vec3(), shotsFired: 0, diveFrom: { ...perch }, decision: -1,
+      home: { ...perch }, moveFrom: { ...perch }, moveTo: { ...perch }, moveTime: 0,
+      shield: 0, laserYaw: 0, laserPitch: 0, laserSweep: 1, laserPrevYaw: 0, laserDir: null, laserLen: 0,
     },
     projectiles: [],
     nextId: 1,
@@ -228,6 +337,8 @@ export function createFight(arena: Arena, seed = 1): FightState {
     rushHitTimer: 0,
     rushHits: 0,
     shots: [],
+    style: { ...NEUTRAL_STYLE },
+    styleTrack: { swings: 0, dashing: false, losTimer: 0, visible: true },
   };
 }
 
@@ -284,10 +395,17 @@ function mortarFlightTime(drop: number): number {
 export function validArms(f: FightState): number[] {
   const b = f.boss;
   const toPlayer = len(sub(playerChest(f.player), b.pos));
-  const horiz = Math.hypot(f.player.pos.x - b.perch.x, f.player.pos.z - b.perch.z);
+  const horiz = Math.hypot(f.player.pos.x - b.pos.x, f.player.pos.z - b.pos.z);
   const out: number[] = [];
   ARMS.forEach((arm, i) => {
     if (arm.kind === 'wait') return out.push(i);
+    if (arm.kind === 'move') {
+      if (b.energy < MOVES.cost) return;
+      if (arm.move === 'retreat' && len(sub(b.pos, b.perch)) < 3) return;
+      if (arm.move === 'hunt' && horiz < MOVES.huntRange + 3) return;
+      if (arm.move === 'rise' && b.pos.y - heightAt(b.pos.x, b.pos.z) > MOVES.maxAlt - 2) return;
+      return out.push(i);
+    }
     if (b.energy < ATTACKS[arm.attack].cost) return;
     if (arm.attack === 'sweep' && toPlayer > SWEEP.range + 1.5) return;
     if (arm.attack === 'dive' && horiz > 75) return;
@@ -300,15 +418,16 @@ export function validArms(f: FightState): number[] {
 // Damage
 // ---------------------------------------------------------------------------------------------
 
-function damagePlayer(f: FightState, amount: number, from: Vec3, decision: number, events: FightEvent[], knockback = 0): void {
-  if (f.outcome !== 'active') return;
+/** Returns true if the hit landed (not dodged / not during post-hit invulnerability). */
+function damagePlayer(f: FightState, amount: number, from: Vec3, decision: number, events: FightEvent[], knockback = 0): boolean {
+  if (f.outcome !== 'active') return false;
   const p = f.player;
   if (p.invuln > 0 || f.hurt > 0) {
     if (p.invuln > 0) {
       events.push({ type: 'dodged', pos: { ...p.pos } });
       recordDodge(f, true);
     }
-    return;
+    return false;
   }
   recordDodge(f, false);
   // Armor absorbs first; the overflow hits health.
@@ -334,11 +453,26 @@ function damagePlayer(f: FightState, amount: number, from: Vec3, decision: numbe
     f.outcome = 'lost';
     events.push({ type: 'lost' });
   }
+  return true;
 }
 
-function damageBoss(f: FightState, amount: number, events: FightEvent[]): void {
+type DamageSource = 'sword' | 'beam' | 'lightning' | 'rush';
+
+function damageBoss(f: FightState, amount: number, events: FightEvent[], source: DamageSource): void {
   if (f.outcome !== 'active') return;
   const b = f.boss;
+  if (b.shield > 0) {
+    // Reflect Shield: beams bounce back, melee is punished, lightning is absorbed.
+    events.push({ type: 'reflected', pos: { ...b.pos }, what: source === 'sword' ? 'melee' : source });
+    if (source === 'beam') damagePlayer(f, COUNTERS.reflectBeamDamage, b.pos, b.decision, events);
+    if (source === 'sword' || source === 'rush') {
+      const p = f.player;
+      p.dashTimer = 0;
+      p.rushing = false;
+      damagePlayer(f, COUNTERS.reflectMeleeDamage, b.pos, b.decision, events, COUNTERS.reflectKnockback);
+    }
+    return;
+  }
   const stunned = b.phase === 'recover' && b.arm >= 0 && (ARMS[b.arm] as { attack?: AttackId }).attack === 'dive';
   const dmg = Math.min(b.hp, amount * (stunned ? BOSS.stunnedMultiplier : 1));
   b.hp -= dmg;
@@ -361,25 +495,85 @@ function areaDamage(f: FightState, center: Vec3, radius: number, damage: number,
 // Skynet actions
 // ---------------------------------------------------------------------------------------------
 
-function spawn(f: FightState, p: Omit<Projectile, 'id'>): void {
-  f.projectiles.push({ ...p, id: f.nextId++ });
+function spawn(f: FightState, p: Omit<Projectile, 'id' | 'phasing'> & { phasing?: boolean }): void {
+  f.projectiles.push({ ...p, phasing: p.phasing ?? false, id: f.nextId++ });
 }
 
 function muzzle(f: FightState, toward: Vec3): Vec3 {
   return add(f.boss.pos, norm(sub(toward, f.boss.pos)), BOSS.radius * 0.7);
 }
 
-function startAction(f: FightState, armIndex: number, context: number[], events: FightEvent[]): void {
+/** Keep a hover point inside the arena rim. */
+function clampToArena(x: number, z: number): { x: number; z: number } {
+  const r = Math.hypot(x, z);
+  const max = 88;
+  return r > max ? { x: (x / r) * max, z: (z / r) * max } : { x, z };
+}
+
+/** Lowest safe hover height at (x, z): clear of fortress roofs, higher over them. */
+function hoverFloor(f: FightState, arena: Arena, x: number, z: number): number {
+  const ground = heightAt(x, z);
+  const top = ground + 70;
+  const t = raycast(arena, { x, y: top, z }, { x, y: ground, z }, f.time);
+  if (t >= 1) return ground + MOVES.minAltOpen;
+  return Math.max(ground + MOVES.minAltFortress, top + (ground - top) * t + 5);
+}
+
+/** Where a repositioning move takes Skynet. */
+function moveTarget(f: FightState, arena: Arena, move: MoveId): Vec3 {
+  const b = f.boss;
+  const p = f.player.pos;
+  const chest = playerChest(f.player);
+  if (move === 'retreat') return { ...b.perch };
+  if (move === 'rise') return { x: b.pos.x, y: Math.min(b.pos.y + MOVES.rise, heightAt(b.pos.x, b.pos.z) + MOVES.maxAlt), z: b.pos.z };
+  if (move === 'hunt') {
+    // Close in to just outside sword reach, on the side Skynet is already on.
+    const dx = b.pos.x - p.x;
+    const dz = b.pos.z - p.z;
+    const h = Math.hypot(dx, dz) || 1;
+    const c = clampToArena(p.x + (dx / h) * MOVES.huntRange, p.z + (dz / h) * MOVES.huntRange);
+    return { x: c.x, y: Math.max(p.y + 4, hoverFloor(f, arena, c.x, c.z)), z: c.z };
+  }
+  // Flank: the nearest point on a ring around the player with a clear shot.
+  const base = Math.atan2(b.pos.z - p.z, b.pos.x - p.x);
+  let best: Vec3 | null = null;
+  let bestD = Infinity;
+  for (let i = 0; i < 12; i++) {
+    const a = base + (i / 12) * Math.PI * 2;
+    const c = clampToArena(p.x + Math.cos(a) * MOVES.flankRange, p.z + Math.sin(a) * MOVES.flankRange);
+    const q = { x: c.x, y: Math.max(p.y + 8, hoverFloor(f, arena, c.x, c.z)), z: c.z };
+    if (raycast(arena, q, chest, f.time) < 1) continue;
+    const d = len(sub(q, b.pos));
+    if (d < bestD) {
+      bestD = d;
+      best = q;
+    }
+  }
+  return best ?? { x: p.x, y: Math.max(p.y + 20, hoverFloor(f, arena, p.x, p.z)), z: p.z };
+}
+
+function startAction(f: FightState, arena: Arena, armIndex: number, context: number[], events: FightEvent[]): void {
   const b = f.boss;
   const arm = ARMS[armIndex];
   b.arm = armIndex;
   // The previous decision's damage-taken window closes now.
   if (f.decisions.length) f.decisions[f.decisions.length - 1].windowEnd = f.time;
-  const cost = arm.kind === 'attack' ? ATTACKS[arm.attack].cost : 0;
+  const cost = arm.kind === 'attack' ? ATTACKS[arm.attack].cost : arm.kind === 'move' ? MOVES.cost : 0;
   f.decisions.push({ time: f.time, arm: armIndex, context, cost, dealt: 0, taken: 0, windowEnd: Infinity, resolved: false, reward: 0 });
   b.decision = f.decisions.length - 1;
   if (arm.kind === 'wait') {
     b.cooldown = arm.duration;
+    return;
+  }
+  if (arm.kind === 'move') {
+    b.energy -= MOVES.cost;
+    const to = moveTarget(f, arena, arm.move);
+    b.moveFrom = { ...b.pos };
+    b.moveTo = to;
+    b.moveTime = clamp(len(sub(to, b.pos)) / MOVES.speed, 0.35, 2);
+    b.timer = b.moveTime;
+    b.phase = 'moving';
+    events.push({ type: 'move', move: arm.move, to: { ...to } });
     return;
   }
   const spec = ATTACKS[arm.attack];
@@ -387,20 +581,44 @@ function startAction(f: FightState, armIndex: number, context: number[], events:
   b.phase = 'telegraph';
   b.timer = spec.telegraph;
   b.shotsFired = 0;
-  const speed = arm.attack === 'volley' ? PROJ.volley.speed : arm.attack === 'spread' ? PROJ.spread.speed : arm.attack === 'homing' ? PROJ.homing.speed : 0;
+  const speedOf: Partial<Record<AttackId, number>> = { volley: PROJ.volley.speed, spread: PROJ.spread.speed, homing: PROJ.homing.speed, feint: COUNTERS.feintSpeed, drones: COUNTERS.drone.speed };
+  const speed = speedOf[arm.attack] ?? 0;
   const t = speed
     ? flightTimeTo(f, speed) + spec.telegraph
     : arm.attack === 'mortar'
       ? mortarFlightTime(b.pos.y - f.player.pos.y) + spec.telegraph
-      : spec.telegraph + spec.active;
+      : spec.telegraph + spec.active * 0.5;
   b.aim = aimPoint(f, arm.aim, t);
   const markers: Vec3[] = [];
   if (arm.attack === 'dive') {
     b.aim = { x: b.aim.x, y: heightAt(b.aim.x, b.aim.z), z: b.aim.z };
     markers.push(b.aim);
   }
-  events.push({ type: 'telegraph', attack: arm.attack, aim: { ...b.aim }, markers });
+  if (arm.attack === 'laser') {
+    // Centre the arc on where the player is heading; start on the side they're running toward
+    // and sweep back across them.
+    const d = sub(b.aim, b.pos);
+    b.laserYaw = Math.atan2(d.z, d.x);
+    // Pitch locks onto waist height at the predicted range: the beam rakes a line across the
+    // ground there. Changing range (or jumping) slips under/over it; strafing sideways doesn't.
+    const waist = heightAt(b.aim.x, b.aim.z) + 1;
+    b.laserPitch = Math.atan2(waist - b.pos.y, Math.max(Math.hypot(d.x, d.z), 1));
+    const v = f.player.vel;
+    const turning = d.x * v.z - d.z * v.x;
+    b.laserSweep = Math.abs(turning) > 1e-3 ? Math.sign(turning) : f.rng() < 0.5 ? -1 : 1;
+    b.laserPrevYaw = b.laserYaw + COUNTERS.laser.arc * b.laserSweep;
+    b.laserDir = null;
+  }
+  // A Feint winds up exactly like a Bolt Volley — that's the point.
+  events.push({ type: 'telegraph', attack: arm.attack === 'feint' ? 'volley' : arm.attack, aim: { ...b.aim }, markers });
 }
+
+/** Sweeping Laser direction for a heading and pitch. */
+function laserDirection(yaw: number, pitch: number): Vec3 {
+  return { x: Math.cos(pitch) * Math.cos(yaw), y: Math.sin(pitch), z: Math.cos(pitch) * Math.sin(yaw) };
+}
+
+const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 function fire(f: FightState, arena: Arena, events: FightEvent[]): void {
   const b = f.boss;
@@ -495,6 +713,80 @@ function fire(f: FightState, arena: Arena, events: FightEvent[]): void {
       }
       break;
     }
+    case 'reflect': {
+      if (b.shotsFired) break;
+      b.shotsFired = 1;
+      b.shield = spec.active;
+      events.push({ type: 'fire', attack: 'reflect' });
+      break;
+    }
+    case 'feint': {
+      // Silent bait window (the dodge goes out), then fast bolts at where they dodged to.
+      if (elapsed < COUNTERS.feintDelay) break;
+      const due = Math.min(COUNTERS.feintShots, Math.floor((elapsed - COUNTERS.feintDelay) / 0.08) + 1);
+      while (b.shotsFired < due) {
+        const target = aimPoint(f, arm.aim, flightTimeTo(f, COUNTERS.feintSpeed));
+        const from = muzzle(f, target);
+        spawn(f, { kind: 'bolt', pos: from, vel: add(vec3(), norm(sub(target, from)), COUNTERS.feintSpeed), ttl: 4, damage: PROJ.volley.damage, radius: PROJ.volley.radius, aoe: 0, gravity: 0, homing: 0, target: null, decision: b.decision });
+        b.shotsFired++;
+        if (b.shotsFired === 1) events.push({ type: 'fire', attack: 'feint' });
+      }
+      break;
+    }
+    case 'drones': {
+      if (b.shotsFired) break;
+      const D = COUNTERS.drone;
+      const chest = playerChest(f.player);
+      for (let i = 0; i < D.count; i++) {
+        // Launch up and out to either side; they curve in (through walls) from there.
+        const side = i % 2 ? 1 : -1;
+        const d = norm(sub(chest, b.pos));
+        const v = norm({ x: d.x - d.z * side * 1.2, y: 0.8, z: d.z + d.x * side * 1.2 });
+        spawn(f, { kind: 'drone', pos: muzzle(f, add(b.pos, v)), vel: add(vec3(), v, D.speed), ttl: D.ttl, damage: D.damage, radius: D.radius, aoe: 0, gravity: 0, homing: D.turn, target: null, phasing: true, decision: b.decision });
+      }
+      b.shotsFired = D.count;
+      events.push({ type: 'fire', attack: 'drones' });
+      break;
+    }
+    case 'laser': {
+      const L = COUNTERS.laser;
+      const k = clamp(elapsed / spec.active, 0, 1);
+      const yaw = b.laserYaw + L.arc * b.laserSweep * (1 - 2 * k);
+      const p = f.player;
+      const d = sub(p.pos, b.pos);
+      const h = Math.hypot(d.x, d.z);
+      const dir = laserDirection(yaw, b.laserPitch);
+      if (!b.laserDir) events.push({ type: 'fire', attack: 'laser' });
+      b.laserDir = dir;
+      // Beam length: stopped by walls/roofs and the ground.
+      const end = add(b.pos, dir, L.range);
+      let length = raycast(arena, b.pos, end, f.time) * L.range;
+      for (let s = 2; s < length; s += 2) {
+        const q = add(b.pos, dir, s);
+        if (q.y <= heightAt(q.x, q.z)) {
+          length = s;
+          break;
+        }
+      }
+      b.laserLen = length;
+      // Did the beam pass over the player since last tick? (swept test, so fast sweeps can't skip)
+      // Beam height where the player stands; it must cross their body.
+      const beamY = b.pos.y + Math.tan(b.laserPitch) * h;
+      const onBody = beamY >= p.pos.y - 0.3 && beamY <= p.pos.y + PLAYER.height + 0.3;
+      if (!b.shotsFired && onBody && h * Math.hypot(1, Math.tan(b.laserPitch)) <= length + 1) {
+        const tol = (L.width + 0.45) / Math.max(h, 1);
+        const rel = wrapAngle(Math.atan2(d.z, d.x) - yaw);
+        const prevRel = wrapAngle(b.laserPrevYaw - yaw);
+        const lo = Math.min(0, prevRel) - tol;
+        const hi = Math.max(0, prevRel) + tol;
+        if (rel >= lo && rel <= hi && raycast(arena, b.pos, { x: p.pos.x, y: beamY, z: p.pos.z }, f.time) >= 1) {
+          b.shotsFired = 1;
+          damagePlayer(f, L.damage, b.pos, b.decision, events);
+        }
+      }
+      b.laserPrevYaw = yaw;
+      break;
+    }
   }
 }
 
@@ -502,6 +794,7 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
   const b = f.boss;
   b.energy = Math.min(BOSS.maxEnergy, b.energy + BOSS.energyRegen * dt);
   b.cooldown = Math.max(0, b.cooldown - dt);
+  b.shield = Math.max(0, b.shield - dt);
 
   switch (b.phase) {
     case 'idle':
@@ -510,9 +803,21 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
         const valid = validArms(f);
         let arm = brain(f, arena, valid, context);
         if (!valid.includes(arm)) arm = valid[0]; // never let a brain pick an invalid arm
-        startAction(f, arm, context, events);
+        startAction(f, arena, arm, context, events);
       }
       break;
+    case 'moving': {
+      b.timer -= dt;
+      const k = 1 - Math.max(0, b.timer) / b.moveTime;
+      const e = k * k * (3 - 2 * k);
+      b.pos = add(b.moveFrom, sub(b.moveTo, b.moveFrom), e);
+      if (b.timer <= 0) {
+        b.pos = { ...b.moveTo };
+        b.phase = 'idle';
+        b.cooldown = 0.15;
+      }
+      break;
+    }
     case 'telegraph':
       b.timer -= dt;
       if (b.timer <= 0) {
@@ -520,6 +825,7 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
         b.phase = 'active';
         b.timer = ATTACKS[arm.attack].active;
         b.diveFrom = { ...b.pos };
+        if (arm.attack === 'dive') b.home = { ...b.pos };
       }
       break;
     case 'active':
@@ -530,6 +836,7 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
         const arm = ARMS[b.arm] as { attack: AttackId };
         b.phase = 'recover';
         b.timer = ATTACKS[arm.attack].recover;
+        b.laserDir = null;
       }
       break;
     case 'recover':
@@ -550,9 +857,9 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
       b.timer -= dt;
       const k = 1 - Math.max(0, b.timer) / DIVE.returnTime;
       const e = k * (2 - k);
-      b.pos = { x: b.diveFrom.x + (b.perch.x - b.diveFrom.x) * e, y: b.diveFrom.y + (b.perch.y - b.diveFrom.y) * e, z: b.diveFrom.z + (b.perch.z - b.diveFrom.z) * e };
+      b.pos = add(b.diveFrom, sub(b.home, b.diveFrom), e);
       if (b.timer <= 0) {
-        b.pos = { ...b.perch };
+        b.pos = { ...b.home };
         b.phase = 'idle';
         b.cooldown = BOSS.globalCooldown;
       }
@@ -590,8 +897,8 @@ function stepProjectiles(f: FightState, arena: Arena, dt: number, events: FightE
       }
       continue;
     }
-    // World hit: walls/roofs block projectiles (that's what makes cover work).
-    const t = raycast(arena, pr.pos, next, f.time);
+    // World hit: walls/roofs block projectiles (that's what makes cover work) — except drones.
+    const t = pr.phasing ? 1 : raycast(arena, pr.pos, next, f.time);
     const ground = heightAt(next.x, next.z);
     if (t < 1 || next.y <= ground) {
       const hit = t < 1 ? add(pr.pos, sub(next, pr.pos), t) : { x: next.x, y: ground, z: next.z };
@@ -613,15 +920,20 @@ function stepSword(f: FightState, events: FightEvent[]): void {
   if (progress < SWORD.hitAt) return;
   p.swingHit = true;
   const chest = playerChest(p);
-  const d = sub(f.boss.pos, chest);
-  if (len(d) > SWORD.reach + BOSS.radius) return;
-  const h = Math.hypot(d.x, d.z);
-  if (h > 2) {
-    let diff = Math.atan2(d.x, d.z) - p.yaw;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    if (Math.abs(diff) > SWORD.arcHalf) return;
-  }
-  damageBoss(f, SWORD.damage[p.comboStep], events);
+  // In the arc, within `reach` (plus the target's radius)?
+  const inArc = (q: Vec3, radius: number) => {
+    const d = sub(q, chest);
+    if (len(d) > SWORD.reach + radius) return false;
+    if (Math.hypot(d.x, d.z) <= 2) return true;
+    return Math.abs(wrapAngle(Math.atan2(d.x, d.z) - p.yaw)) <= SWORD.arcHalf;
+  };
+  // Hunter drones can be cut down.
+  f.projectiles = f.projectiles.filter(pr => {
+    if (pr.kind !== 'drone' || !inArc(pr.pos, pr.radius + 0.6)) return true;
+    events.push({ type: 'droneDestroyed', pos: { ...pr.pos } });
+    return false;
+  });
+  if (inArc(f.boss.pos, BOSS.radius)) damageBoss(f, SWORD.damage[p.comboStep], events, 'sword');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -714,7 +1026,7 @@ function strikeLightning(f: FightState, events: FightEvent[]): void {
   const b = f.boss.pos;
   const hit = Math.hypot(b.x - pos.x, b.z - pos.z) <= L.radius + BOSS.radius * 0.5 && b.y >= pos.y - 2;
   events.push({ type: 'lightning', pos, hit });
-  if (hit) damageBoss(f, L.damage, events);
+  if (hit) damageBoss(f, L.damage, events, 'lightning');
 }
 
 function fireBeam(f: FightState, arena: Arena, eye: Vec3, look: Vec3, events: FightEvent[]): void {
@@ -758,24 +1070,31 @@ function stepSkills(f: FightState, arena: Arena, input: PlayerInput, dt: number,
   if (p.rushing) {
     f.rushHitTimer -= dt;
     if (f.rushHitTimer <= 0 && f.rushHits < SKILLS.rush.maxHits && len(sub(f.boss.pos, playerChest(p))) <= SKILLS.rush.reach + BOSS.radius) {
-      damageBoss(f, SKILLS.rush.damage, events);
+      damageBoss(f, SKILLS.rush.damage, events, 'rush');
       f.rushHits++;
       f.rushHitTimer = SKILLS.rush.hitInterval;
     }
   }
 
-  // Sword beams: hit Skynet (segment vs sphere), walls, or terrain.
+  // Sword beams: hit a drone, Skynet (segment vs sphere), walls, or terrain.
   const keep: PlayerShot[] = [];
   for (const s of f.shots) {
     s.ttl -= dt;
     const next = add(s.pos, s.vel, dt);
     const seg = sub(next, s.pos);
     const segLen = len(seg);
-    const tb = raySphere(s.pos, norm(seg), f.boss.pos, BOSS.radius + SKILLS.beam.radius);
     const tw = raycast(arena, s.pos, next, f.time) * segLen;
+    const drone = f.projectiles.find(pr => pr.kind === 'drone' && raySphere(s.pos, norm(seg), pr.pos, pr.radius + SKILLS.beam.radius + 0.4) <= Math.min(segLen, tw));
+    if (drone) {
+      f.projectiles = f.projectiles.filter(pr => pr !== drone);
+      events.push({ type: 'droneDestroyed', pos: { ...drone.pos } });
+      events.push({ type: 'beamImpact', pos: { ...drone.pos }, hitBoss: false });
+      continue;
+    }
+    const tb = raySphere(s.pos, norm(seg), f.boss.pos, BOSS.radius + SKILLS.beam.radius);
     if (tb <= segLen && tb <= tw) {
       events.push({ type: 'beamImpact', pos: add(s.pos, norm(seg), tb), hitBoss: true });
-      damageBoss(f, SKILLS.beam.damage, events);
+      damageBoss(f, SKILLS.beam.damage, events, 'beam');
       continue;
     }
     if (tw < segLen || next.y <= heightAt(next.x, next.z)) {
@@ -793,7 +1112,11 @@ function stepSkills(f: FightState, arena: Arena, input: PlayerInput, dt: number,
 // share of Skynet's 1200, minus a small energy charge. 30 and 240 are both 20% of each side.
 // ---------------------------------------------------------------------------------------------
 
-export const REWARD = { dealtScale: 30, takenScale: 240, energyWeight: 0.1, energyScale: 40 };
+/**
+ * `moveCredit`: a repositioning move deals no damage itself — its value is the attack it sets up,
+ * so it also earns this share of the next decision's reward.
+ */
+export const REWARD = { dealtScale: 30, takenScale: 240, energyWeight: 0.1, energyScale: 40, moveCredit: 0.6 };
 
 export function rewardOf(d: Pick<Decision, 'dealt' | 'taken' | 'cost'>): number {
   const r = d.dealt / REWARD.dealtScale - d.taken / REWARD.takenScale - (REWARD.energyWeight * d.cost) / REWARD.energyScale;
@@ -802,16 +1125,50 @@ export function rewardOf(d: Pick<Decision, 'dealt' | 'taken' | 'cost'>): number 
 
 /**
  * Score decisions whose window has closed and whose projectiles have all resolved.
- * `force` scores everything (fight over).
+ * `force` scores everything (fight over). Moves wait for the decision after them.
  */
 export function resolveDecisions(f: FightState, force = false): void {
   const live = new Set(f.projectiles.map(p => p.decision));
-  f.decisions.forEach((d, i) => {
-    if (d.resolved) return;
-    if (!force && (d.windowEnd > f.time || live.has(i))) return;
-    d.reward = rewardOf(d);
+  // Newest first, so a move sees its follow-up's reward in the same pass.
+  for (let i = f.decisions.length - 1; i >= 0; i--) {
+    const d = f.decisions[i];
+    if (d.resolved) continue;
+    if (!force && (d.windowEnd > f.time || live.has(i))) continue;
+    const next = f.decisions[i + 1];
+    if (ARMS[d.arm].kind === 'move') {
+      if (!force && !next?.resolved) continue;
+      d.reward = clamp(rewardOf(d) + REWARD.moveCredit * (next ? rewardOf(next) : 0), -1, 1);
+    } else d.reward = rewardOf(d);
     d.resolved = true;
-  });
+  }
+}
+
+/** Update the rolling play-style profile (what the brain reads as "how this player plays"). */
+function updateStyle(f: FightState, arena: Arena, input: PlayerInput, dt: number, swung: boolean, usedSkill: boolean, dashed: boolean): void {
+  const p = f.player;
+  const s = f.style;
+  const tr = f.styleTrack;
+  const k = 1 - Math.exp(-dt / STYLE_MEMORY);
+  const decay = Math.exp(-dt / STYLE_MEMORY);
+  const ema = (v: number, x: number) => v + (x - v) * k;
+  // Event rates in per-minute units: each event adds 60/τ, decaying with time constant τ.
+  const rate = (v: number, happened: boolean) => v * decay + (happened ? 60 / STYLE_MEMORY : 0);
+  tr.losTimer -= dt;
+  if (tr.losTimer <= 0) {
+    tr.losTimer = 0.2;
+    tr.visible = bossCanSee(f, arena);
+  }
+  const dist = len(sub(playerChest(p), f.boss.pos));
+  const pil = arena.pillar;
+  const onPillar = !!pil && Math.hypot(p.pos.x - pil.x, p.pos.z - pil.z) <= pil.r + 1.5 && p.pos.y >= pil.y + pil.height - 1.5;
+  s.dist = ema(s.dist, dist);
+  s.cover = ema(s.cover, tr.visible ? 0 : 1);
+  s.air = ema(s.air, !p.onGround && !p.climbing ? 1 : 0);
+  s.pillar = ema(s.pillar, onPillar ? 1 : 0);
+  s.sprint = ema(s.sprint, Math.hypot(p.vel.x, p.vel.z) > 12 ? 1 : 0);
+  s.melee = rate(s.melee, swung && dist < 15);
+  s.skills = rate(s.skills, usedSkill);
+  s.dashes = rate(s.dashes, dashed);
 }
 
 /** Advance the whole fight one tick. Deterministic given the same inputs, seed, and brain. */
@@ -819,6 +1176,8 @@ export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: n
   const events: FightEvent[] = [];
   const p = f.player;
   const wasDashing = p.dashTimer > 0;
+  const prevSwing = p.swingTimer;
+  const prevCd = f.skillCd.slice();
   if (f.outcome === 'active' || f.outcome === 'won') stepPlayer(p, input, dt, arena, f.time);
   // Remember which side the player dodges to, relative to Skynet's line of fire.
   if (!wasDashing && p.dashTimer > 0) {
@@ -833,6 +1192,8 @@ export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: n
   if (f.outcome === 'active') {
     stepSword(f, events);
     stepSkills(f, arena, input, dt, events);
+    const usedSkill = f.skillCd.some((c, i) => c > prevCd[i]);
+    updateStyle(f, arena, input, dt, p.swingTimer > prevSwing, usedSkill, !wasDashing && p.dashTimer > 0 && !p.rushing);
     stepBoss(f, arena, dt, brain, events);
   }
   stepProjectiles(f, arena, dt, events);
@@ -850,11 +1211,12 @@ export function heuristicBrain(f: FightState, arena: Arena, valid: number[]): nu
     const opts = valid.filter(i => pred(ARMS[i]));
     return opts.length ? opts[Math.floor(f.rng() * opts.length)] : -1;
   };
-  const isAttack = (id: AttackId) => (a: Arm) => a.kind === 'attack' && a.attack === id;
+  const isAttack = (...ids: AttackId[]) => (a: Arm) => a.kind === 'attack' && ids.includes(a.attack);
+  const isMove = (m: MoveId) => (a: Arm) => a.kind === 'move' && a.move === m;
   const r = f.rng();
   const close = len(sub(playerChest(f.player), f.boss.pos)) < SWEEP.range;
   if (close) {
-    const s = pick(isAttack('sweep'));
+    const s = pick(isAttack(r < 0.5 ? 'sweep' : 'reflect'));
     if (s >= 0) return s;
   }
   if (f.boss.energy < 40 && r < 0.4) return pick(a => a.kind === 'wait');
@@ -862,9 +1224,11 @@ export function heuristicBrain(f: FightState, arena: Arena, valid: number[]): nu
   let choice = -1;
   if (visible) {
     if (r < 0.15 && f.player.onGround) choice = pick(isAttack('dive'));
-    if (choice < 0) choice = pick(a => a.kind === 'attack' && (a.attack === 'volley' || a.attack === 'spread' || a.attack === 'homing'));
+    if (choice < 0) choice = pick(isAttack('volley', 'spread', 'homing', 'feint', 'laser'));
   } else {
-    choice = pick(a => a.kind === 'attack' && (a.attack === 'mortar' || a.attack === 'homing'));
+    if (r < 0.3) choice = pick(isMove('flank'));
+    if (choice < 0) choice = pick(isAttack('mortar', 'homing', 'drones'));
   }
+  if (choice < 0 && len(sub(f.boss.pos, f.boss.perch)) > 30 && r < 0.5) choice = pick(isMove('retreat'));
   return choice >= 0 ? choice : pick(a => a.kind === 'wait');
 }

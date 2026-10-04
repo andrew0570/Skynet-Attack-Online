@@ -69,6 +69,44 @@
       #result h1 { margin: 0; font-size: 3rem; letter-spacing: 0.2em; }
       #result.won h1 { color: #00e5ff; text-shadow: 0 0 20px #00e5ff; }
       #result.lost h1 { color: #ff3b1f; text-shadow: 0 0 20px #ff2200; }
+
+      /* Counter-move callout under Skynet's bars */
+      #callout { position: fixed; top: 118px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; transition: opacity 0.35s; width: min(640px, 90vw); }
+      #callout .name { font-size: 1.6rem; font-weight: 800; letter-spacing: 0.3em; color: #ff5a3c; text-shadow: 0 0 14px #ff2200; }
+      #callout.move .name { font-size: 1.05rem; color: #ffb08f; text-shadow: 0 0 8px #ff2200; }
+      #callout .why { margin-top: 4px; font-size: 0.85rem; color: #ffd9cc; }
+      #callout .hint { margin-top: 2px; font-size: 0.75rem; color: #9dffe0; letter-spacing: 0.06em; }
+
+      /* Skynet's read on you (top right) */
+      #read { position: fixed; top: 18px; right: 18px; width: 236px; padding: 12px 14px; pointer-events: none; background: rgba(12,5,4,0.62); border: 1px solid rgba(255,59,31,0.35); border-radius: 8px; font-size: 0.72rem; }
+      #read .title { letter-spacing: 0.22em; color: #ff8f73; font-size: 0.62rem; font-weight: 700; }
+      #read-style { margin: 4px 0 2px; font-size: 1.15rem; font-weight: 800; letter-spacing: 0.18em; color: #fff; }
+      #read-traits { color: #ffcbbd; min-height: 1.1em; line-height: 1.35; }
+      #read-habits { display: grid; grid-template-columns: 72px 1fr; gap: 3px 8px; align-items: center; margin: 10px 0; }
+      #read-habits .h { color: #d9b8ae; letter-spacing: 0.04em; }
+      #read-habits .bar { height: 5px; }
+      #read-habits .bar > div { background: #ff6a4a; }
+      #read-move { margin-top: 3px; font-weight: 700; color: #fff; font-size: 0.82rem; }
+      #read-why { color: #ffcbbd; line-height: 1.35; }
+      #read .tab { margin-top: 8px; color: #9feaff; opacity: 0.75; font-size: 0.65rem; letter-spacing: 0.08em; }
+
+      /* What Skynet learned (hold Tab) */
+      #learned { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(5,2,2,0.72); pointer-events: none; transition: opacity 0.15s; z-index: 5; }
+      #learned .card { width: min(820px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 20px 24px; background: #120a08; border: 1px solid #ff3b1f; border-radius: 10px; box-shadow: 0 0 30px rgba(255,40,10,0.3); }
+      #learned h2 { margin: 0; color: #ff5a3c; letter-spacing: 0.14em; font-size: 1.1rem; }
+      #learned .sub { margin: 4px 0 14px; color: #d9b8ae; font-size: 0.8rem; }
+      #learned-rows { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(120px, 0.8fr) 2.2fr; gap: 10px 16px; align-items: start; font-size: 0.78rem; }
+      #learned-rows .head { color: #ff8f73; letter-spacing: 0.18em; font-size: 0.62rem; font-weight: 700; }
+      #learned-rows .who b { display: block; color: #fff; font-size: 0.9rem; letter-spacing: 0.08em; }
+      #learned-rows .who span { color: #d9b8ae; }
+      #learned-rows .who.you b::after { content: ' ← you'; color: #00e5ff; font-size: 0.7rem; letter-spacing: 0.1em; }
+      #learned-rows .v0 { color: #9b8a85; }
+      #learned-rows .now { display: grid; grid-template-columns: 1fr 90px 42px; gap: 3px 8px; align-items: center; }
+      #learned-rows .now .bar { height: 6px; }
+      #learned-rows .now .bar > div { background: #e34948; }
+      #learned-rows .now .bar > div.neg { background: #6b5f5c; }
+      #learned-rows .now .v { text-align: right; font-variant-numeric: tabular-nums; color: #ffcbbd; }
+      #learned .foot { margin-top: 14px; color: #9b8a85; font-size: 0.72rem; line-height: 1.45; }
     </style>
   </head>
   <body>
@@ -89,6 +127,27 @@
       <div class="skill" id="skill-0"><span class="icon">⚡</span><span class="key">1</span><div class="cd" id="skill-cd-0"></div><div class="time" id="skill-time-0"></div></div>
       <div class="skill" id="skill-1"><span class="icon">⚔</span><span class="key">2</span><div class="cd" id="skill-cd-1"></div><div class="time" id="skill-time-1"></div></div>
       <div class="skill" id="skill-2"><span class="icon">✦</span><span class="key">3</span><div class="cd" id="skill-cd-2"></div><div class="time" id="skill-time-2"></div></div>
+    </div>
+    <div id="callout" class="hidden"><div class="name" id="callout-name"></div><div class="why" id="callout-why"></div><div class="hint" id="callout-hint"></div></div>
+    <div id="read">
+      <div class="title">SKYNET'S READ ON YOU</div>
+      <div id="read-style">UNREAD</div>
+      <div id="read-traits"></div>
+      <div id="read-habits"></div>
+      <div class="title">LAST DECISION</div>
+      <div id="read-move">—</div>
+      <div id="read-why"></div>
+      <div class="tab">Hold Tab: what Skynet has learned</div>
+    </div>
+    <div id="learned" class="hidden">
+      <div class="card">
+        <h2>WHAT SKYNET HAS LEARNED</h2>
+        <div class="sub" id="learned-sub"></div>
+        <div id="learned-rows"></div>
+        <div class="foot">Bars show each move's expected payoff against that kind of player: damage it expects to deal
+        minus damage it expects to take, learned from every fight the community has played. At v0 every move scored 0,
+        so Skynet picked at random.</div>
+      </div>
     </div>
     <div id="vignette"></div>
     <div id="result" class="hidden"><h1 id="result-title"></h1><p id="result-note"></p><p>Press R to fight again</p></div>
@@ -112,6 +171,7 @@
       <p>Skills (aim with the reticle): 1 Lightning Strike · 2 Blade Rush · 3 Sword Beam</p>
       <p>Skynet's energy bar limits its attacks — strike when it's drained or stunned after a Dive Slam.</p>
       <p>Push into glowing vines to climb · Amber walls shift · Walls block bolts, not mortars · R restart · Esc release mouse</p>
+      <p>Skynet reads your play style and learns counters to it · Hold Tab to see what it has learned</p>
       <p class="start">Click to engage</p>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -68,7 +68,13 @@ export function createSkynet(): SkynetVisual {
   const ringMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.9, roughness: 0.3, emissive: 0xff2200, emissiveIntensity: 0 });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.12, 8, 48), ringMat);
   const light = new THREE.PointLight(0xff3311, 120, 60);
-  group.add(core, ring, light);
+  // Reflect Shield: a gold lattice bubble that only shows while the shield is up.
+  const shieldMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.8, 0.3).multiplyScalar(3), wireframe: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const shieldGlowMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.7, 0.2), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide });
+  const shield = new THREE.Group();
+  shield.add(new THREE.Mesh(new THREE.IcosahedronGeometry(2.4, 2), shieldMat), new THREE.Mesh(new THREE.SphereGeometry(2.3, 24, 16), shieldGlowMat));
+  shield.visible = false;
+  group.add(core, ring, light, shield);
   group.scale.setScalar(2);
 
   let flash = 0;
@@ -89,7 +95,7 @@ export function createSkynet(): SkynetVisual {
       shake = Math.max(0, shake - dt * 3);
       const attack = boss.arm >= 0 && ARMS[boss.arm].kind === 'attack' ? (ARMS[boss.arm] as { attack: AttackId }).attack : null;
       const stunned = boss.phase === 'recover' && attack === 'dive';
-      const perched = boss.phase === 'idle' || ((boss.phase === 'telegraph' || boss.phase === 'recover') && attack !== 'dive');
+      const perched = boss.phase === 'idle' || boss.phase === 'moving' || ((boss.phase === 'telegraph' || boss.phase === 'recover') && attack !== 'dive');
 
       // Core brightness: charges during telegraphs, sputters while stunned.
       let intensity = 5;
@@ -107,6 +113,19 @@ export function createSkynet(): SkynetVisual {
       ring.scale.setScalar(attack === 'sweep' && boss.phase === 'active' ? 1.35 : 1);
 
       core.rotation.set(t * 0.7, t * 1.1, 0);
+      // Shield bubble: pops in when raised, flickers in its last moments.
+      shield.visible = boss.shield > 0;
+      if (shield.visible) {
+        const fade = boss.shield < 0.3 ? (Math.sin(t * 60) > 0 ? 1 : 0.3) : 1;
+        shieldMat.opacity = 0.75 * fade;
+        shieldGlowMat.opacity = 0.18 * fade;
+        shield.rotation.set(t * 0.4, t * 0.9, 0);
+      }
+      // Laser charge / firing: the ring locks flat and glows.
+      if (attack === 'laser' && (boss.phase === 'telegraph' || boss.phase === 'active')) {
+        ringMat.emissiveIntensity = boss.phase === 'active' ? 6 : 2;
+        ring.rotation.set(Math.PI / 2, 0, ringSpin);
+      }
       // Damage shake: jolt the whole construct and wobble its tilt.
       const s = shake * shake * 1.1;
       group.position.set(

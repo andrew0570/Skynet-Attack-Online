@@ -67,6 +67,14 @@ energy 12/s), DB reset to v0. Round 2: 1000 fights → brain v1000, Skynet win r
   you sleep** — this is what makes Skynet look smart in the demo.
 - **Cut line:** one bot style.
 
+## M5.5 — Moveset 2.0: adapt to play styles · 1:15 → ~3:00 AM ✅ (added)
+Playtest verdict on round 2: smarter, but not visibly *adapting to you*. Added a play-style
+profile (8 habit features → 29 total), mobility (hunt / flank / rise / retreat), four style
+counters (Reflect Shield, Feint, Hunter Drones, Sweeping Laser) → 25 arms, a sniper bot,
+decision explanations + "read on you" panel + callouts + Tab "what Skynet learned" panel, and
+a per-style "how Skynet adapted" chart in the training report. Round 3: 1500 fights from v0.
+Design: docs/design.md §2d.
+
 ## Sleep · ~3:30 → 8:00 AM
 
 ---

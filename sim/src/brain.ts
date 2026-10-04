@@ -1,6 +1,6 @@
 import { raycast, type Arena } from './arena';
 import { SKILL_ORDER, STAMINA, VITALS } from './config';
-import { ARMS, BOSS, playerChest, setContextExtractor, type Brain, type FightState } from './combat';
+import { ARMS, BOSS, NEUTRAL_STYLE, playerChest, setContextExtractor, type Brain, type FightState, type PlayStyle } from './combat';
 import { clamp } from './math';
 
 // =============================================================================================
@@ -33,8 +33,29 @@ export const FEATURE_NAMES = [
   'Skynet HP',
   'projectiles in flight',
   'dodge rate',
+  'Skynet away from perch',
+  // Play-style profile (rolling ~20 s habits, see PlayStyle in combat.ts):
+  'habit: keeps range',
+  'habit: hides in cover',
+  'habit: airborne',
+  'habit: on the pillar',
+  'habit: sprinting',
+  'habit: melee pressure',
+  'habit: skill use',
+  'habit: dashing',
 ] as const;
+export type FeatureName = (typeof FEATURE_NAMES)[number];
 export const FEATURE_DIM = FEATURE_NAMES.length;
+/** Index of the first play-style feature. */
+export const STYLE_FEATURE_START = FEATURE_NAMES.indexOf('habit: keeps range');
+
+/** Divisors that put each habit on a ~0..1 scale (distance in m, rates per minute). */
+const STYLE_SCALE: Record<keyof PlayStyle, number> = { dist: 60, cover: 1, air: 1, pillar: 1, sprint: 1, melee: 30, skills: 20, dashes: 20 };
+const STYLE_KEYS: (keyof PlayStyle)[] = ['dist', 'cover', 'air', 'pillar', 'sprint', 'melee', 'skills', 'dashes'];
+
+export function styleFeatures(s: PlayStyle): number[] {
+  return STYLE_KEYS.map(k => clamp(s[k] / STYLE_SCALE[k], 0, 1.5));
+}
 
 /** The situation Skynet sees when deciding, normalized to roughly [-1.5, 1.5]. */
 export function computeFeatures(f: FightState, arena: Arena): number[] {
@@ -73,9 +94,125 @@ export function computeFeatures(f: FightState, arena: Arena): number[] {
     b.hp / BOSS.maxHp,
     Math.min(f.projectiles.length / 10, 1.5),
     dodgeRate,
+    Math.min(Math.hypot(b.pos.x - b.perch.x, b.pos.y - b.perch.y, b.pos.z - b.perch.z) / 40, 1.5),
+    ...styleFeatures(f.style),
   ].map(bound);
 }
 setContextExtractor(computeFeatures);
+
+// ---------------------------------------------------------------------------------------------
+// Reading the player (for the "Skynet's read on you" panel and the learned-behaviour panel)
+// ---------------------------------------------------------------------------------------------
+
+export type StyleLabel = 'Sniper' | 'Camper' | 'Brawler' | 'Pillar climber' | 'Dodger' | 'Aerialist' | 'Runner' | 'Unread';
+
+/** Each archetype's defining habit: score >= 1 means the habit is strong enough to count. */
+const STYLE_TESTS: { label: StyleLabel; score: (s: PlayStyle) => number; trait: (s: PlayStyle) => string }[] = [
+  { label: 'Sniper', score: s => Math.min(s.dist / 48, s.skills / 6), trait: s => `fights from ${Math.round(s.dist)} m with skills` },
+  { label: 'Camper', score: s => s.cover / 0.5, trait: s => `hidden ${Math.round(s.cover * 100)}% of the time` },
+  { label: 'Brawler', score: s => Math.max(25 / Math.max(s.dist, 1), s.melee / 8), trait: s => `${Math.round(s.melee)} close swings/min` },
+  { label: 'Pillar climber', score: s => s.pillar / 0.25, trait: s => `${Math.round(s.pillar * 100)}% of time on the pillar` },
+  { label: 'Dodger', score: s => s.dashes / 12, trait: s => `${Math.round(s.dashes)} dashes/min` },
+  { label: 'Aerialist', score: s => s.air / 0.4, trait: s => `airborne ${Math.round(s.air * 100)}% of the time` },
+  { label: 'Runner', score: s => s.sprint / 0.35, trait: s => `sprinting ${Math.round(s.sprint * 100)}% of the time` },
+];
+
+/** The player's dominant style (and up to two runner-up habits) as Skynet sees it. */
+export function describeStyle(s: PlayStyle): { label: StyleLabel; traits: string[] } {
+  const ranked = STYLE_TESTS.map(t => ({ t, v: t.score(s) })).sort((a, b) => b.v - a.v);
+  const strong = ranked.filter(r => r.v >= 1);
+  if (!strong.length) return { label: 'Unread', traits: ['no strong habits yet'] };
+  return { label: strong[0].t.label, traits: strong.slice(0, 3).map(r => r.t.trait(s)) };
+}
+
+/** Feature defaults for a typical moment (used to build example contexts and as the explanation baseline). */
+const TYPICAL: Partial<Record<FeatureName, number>> = {
+  bias: 1, distance: 0.4, 'height above Skynet': -0.8, 'player visible': 1, speed: 0.5, stamina: 0.8, 'can dodge now': 1,
+  health: 1, armor: 1, 'lightning ready': 1, 'rush ready': 1, 'beam ready': 1, 'Skynet energy': 0.7, 'Skynet HP': 0.7,
+  'projectiles in flight': 0.1, 'dodge rate': 0.5,
+};
+
+/** A full context vector from named situation values plus a play style. */
+export function contextFrom(situation: Partial<Record<FeatureName, number>>, style: PlayStyle): number[] {
+  const x = FEATURE_NAMES.map(n => situation[n] ?? TYPICAL[n] ?? 0);
+  styleFeatures(style).forEach((v, i) => (x[STYLE_FEATURE_START + i] = v));
+  return x;
+}
+
+const BASELINE = contextFrom({}, NEUTRAL_STYLE);
+
+/** How each feature reads when it's above / below a typical moment. */
+const READS: Partial<Record<FeatureName, [string, string]>> = {
+  distance: ['you were far away', 'you were close'],
+  'height above Skynet': ['you were up high', 'you were low'],
+  'player visible': ['you were in the open', 'you were out of sight'],
+  'under a roof': ['you were under a roof', 'you had no roof'],
+  speed: ['you were moving fast', 'you were standing still'],
+  'closing in': ['you were charging in', 'you were backing off'],
+  airborne: ['you were airborne', 'you were grounded'],
+  climbing: ['you were climbing', 'you were not climbing'],
+  stamina: ['you had stamina', 'your stamina was low'],
+  'can dodge now': ['your dash was ready', 'you could not dash'],
+  health: ['your health was high', 'your health was low'],
+  armor: ['your armor was up', 'your armor was broken'],
+  'lightning ready': ['your lightning was ready', 'your lightning was cooling down'],
+  'rush ready': ['your rush was ready', 'your rush was cooling down'],
+  'beam ready': ['your beam was ready', 'your beam was cooling down'],
+  'Skynet energy': ['it had energy to spare', 'it was low on energy'],
+  'Skynet HP': ['it was healthy', 'it was badly hurt'],
+  'projectiles in flight': ['the air was full of shots', 'no shots were in flight'],
+  'dodge rate': ['you dodge most attacks', 'you get hit a lot'],
+  'Skynet away from perch': ['it was away from its perch', 'it was on its perch'],
+  'habit: keeps range': ['you fight from range', 'you fight up close'],
+  'habit: hides in cover': ['you hide in cover', 'you stay in the open'],
+  'habit: airborne': ['you spend time in the air', 'you stay on the ground'],
+  'habit: on the pillar': ['you camp the pillar', 'you avoid the pillar'],
+  'habit: sprinting': ['you sprint a lot', 'you rarely sprint'],
+  'habit: melee pressure': ['you swing at it up close', 'you rarely melee'],
+  'habit: skill use': ['you lean on skills', 'you rarely use skills'],
+  'habit: dashing': ['you dash a lot', 'you rarely dash'],
+};
+
+/**
+ * Why did the brain like this arm? The features whose difference from a typical moment raised
+ * its predicted payoff the most (θⱼ·(xⱼ − baselineⱼ)), strongest first.
+ */
+export function explainDecision(policy: Policy, x: number[], arm: number, top = 2): { feature: FeatureName; text: string; weight: number }[] {
+  const theta = policy.arms[arm].theta;
+  const out: { feature: FeatureName; text: string; weight: number }[] = [];
+  FEATURE_NAMES.forEach((name, j) => {
+    const delta = x[j] - BASELINE[j];
+    const weight = theta[j] * delta;
+    if (name === 'bias' || Math.abs(delta) < 0.05 || weight < 0.005) return;
+    const reads = READS[name];
+    out.push({ feature: name, text: reads ? reads[delta > 0 ? 0 : 1] : name, weight });
+  });
+  return out.sort((a, b) => b.weight - a.weight).slice(0, top);
+}
+
+/** Example players, each in a moment typical of their style — what the learned panel probes. */
+export const ARCHETYPES: { label: StyleLabel; blurb: string; context: number[] }[] = [
+  {
+    label: 'Sniper', blurb: 'beams from long range',
+    context: contextFrom({ distance: 0.7, speed: 0.2, 'beam ready': 1 }, { dist: 65, cover: 0.15, air: 0.1, pillar: 0, sprint: 0.15, melee: 0, skills: 14, dashes: 3 }),
+  },
+  {
+    label: 'Camper', blurb: 'hides under roofs',
+    context: contextFrom({ 'player visible': 0, 'under a roof': 1, speed: 0.1, distance: 0.45 }, { dist: 45, cover: 0.75, air: 0.05, pillar: 0, sprint: 0.1, melee: 0, skills: 2, dashes: 2 }),
+  },
+  {
+    label: 'Brawler', blurb: 'rushes in to melee',
+    context: contextFrom({ distance: 0.1, 'closing in': 0.6, 'height above Skynet': -0.1 }, { dist: 12, cover: 0.1, air: 0.25, pillar: 0.1, sprint: 0.5, melee: 25, skills: 6, dashes: 6 }),
+  },
+  {
+    label: 'Dodger', blurb: 'dashes through every attack',
+    context: contextFrom({ distance: 0.35, 'dodge rate': 0.8 }, { dist: 35, cover: 0.15, air: 0.2, pillar: 0, sprint: 0.3, melee: 2, skills: 4, dashes: 18 }),
+  },
+  {
+    label: 'Runner', blurb: 'strafes in the open',
+    context: contextFrom({ distance: 0.45, speed: 0.8 }, { dist: 45, cover: 0.1, air: 0.2, pillar: 0, sprint: 0.75, melee: 0, skills: 4, dashes: 6 }),
+  },
+];
 
 // ---------------------------------------------------------------------------------------------
 // LinUCB

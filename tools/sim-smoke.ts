@@ -4,6 +4,12 @@ import {
   ARENA_WALK_RADIUS,
   ARMS,
   BOSS,
+  bossCanSee,
+  COUNTERS,
+  describeStyle,
+  MOVES,
+  REWARD,
+  validArms,
   createFight,
   heuristicBrain,
   computeFeatures,
@@ -377,11 +383,88 @@ const rush = runFight(1.2, (f, t) => ({ eyeX: 0, eyeY: 0, eyeZ: 0, lookX: 0, loo
 const rushHits = rush.events.filter(e => e.type === 'bossHit').length;
 check('blade rush (2) slashes through Skynet', rushHits >= 3 && rush.f.player.pos.z < bossZ - 3, `${rushHits} hits, ended at z=${rush.f.player.pos.z.toFixed(1)} (Skynet at ${bossZ})`);
 
+// ---------- Skynet moveset 2.0: mobility + style counters ----------
+/** Brain that plays `first` once (when valid), then only waits. */
+const once = (match: (a: (typeof ARMS)[number]) => boolean): Brain => {
+  let done = false;
+  return (_f, _a, valid) => {
+    const i = valid.find(k => match(ARMS[k]));
+    if (done || i === undefined) return 0;
+    done = true;
+    return i;
+  };
+};
+const isMove = (m: string) => (a: (typeof ARMS)[number]) => a.kind === 'move' && a.move === m;
+const isAtk = (atk: string, aim?: string) => (a: (typeof ARMS)[number]) => a.kind === 'attack' && a.attack === atk && (!aim || a.aim === aim);
+const ready = (f: Fight) => { f.boss.cooldown = 0; f.boss.energy = 100; };
+
+const hunt = runFight(4, () => ({}), { brain: once(isMove('hunt')), setup: f => { ready(f); f.player.pos = { x: 0, y: heightAt(0, 60), z: 60 }; } });
+const huntGap = Math.hypot(hunt.f.boss.pos.x - hunt.f.player.pos.x, hunt.f.boss.pos.z - hunt.f.player.pos.z);
+check('Hunt: Skynet leaves its perch and closes to sweep range', hunt.events.some(e => e.type === 'move' && e.move === 'hunt') && huntGap < MOVES.huntRange + 0.5 && validArms(hunt.f).some(i => isAtk('sweep')(ARMS[i])),
+  `${huntGap.toFixed(1)} m away, ${hunt.f.boss.pos.y.toFixed(1)} m up`);
+const flank = runFight(4, () => ({}), { arena: coverArena, brain: once(isMove('flank')), setup: ready });
+check('Flank: Skynet moves to regain line of sight on a hidden player', !bossCanSee(createFight(coverArena, 1), coverArena) && bossCanSee(flank.f, coverArena),
+  `now at ${flank.f.boss.pos.x.toFixed(1)}, ${flank.f.boss.pos.y.toFixed(1)}, ${flank.f.boss.pos.z.toFixed(1)}`);
+const back = runFight(3, () => ({}), { brain: once(isMove('retreat')), setup: f => { ready(f); f.boss.pos = { x: 30, y: 20, z: 30 }; } });
+check('Retreat: Skynet flies back to its perch', Math.hypot(back.f.boss.pos.x - back.f.boss.perch.x, back.f.boss.pos.y - back.f.boss.perch.y, back.f.boss.pos.z - back.f.boss.perch.z) < 1e-6);
+
+const reflected = runFight(3, (f, t) => ({ ...lookAt(f, f.boss.pos), skill: t === 20 ? 3 : 0 }), { brain: once(isAtk('reflect')), setup: f => { placeAt(40)(f); ready(f); } });
+check('Reflect Shield bounces a sword beam back at the player', reflected.f.boss.hp === BOSS.maxHp && reflected.events.some(e => e.type === 'reflected' && e.what === 'beam') && reflected.f.armor === VITALS.armor - COUNTERS.reflectBeamDamage,
+  `Skynet HP ${reflected.f.boss.hp}, player armor ${reflected.f.armor.toFixed(0)}`);
+const shieldedSword = runFight(1.5, (_f, t) => ({ attack: t === 20, aimZ: -1 }), { brain: once(isAtk('reflect')), setup: f => { swordSetup(f); ready(f); } });
+check('Reflect Shield punishes melee (damage + knockback)', shieldedSword.f.boss.hp === BOSS.maxHp && shieldedSword.f.armor < VITALS.armor && shieldedSword.events.some(e => e.type === 'reflected' && e.what === 'melee'));
+
+const feint = runFight(4, () => ({}), { brain: once(isAtk('feint', 'lead')), setup: f => { placeAt(40)(f); ready(f); } });
+const feintTele = feint.events.find(e => e.type === 'telegraph');
+check('Feint winds up like a Bolt Volley, then fires late and fast', feintTele?.type === 'telegraph' && feintTele.attack === 'volley' && feint.events.some(e => e.type === 'fire' && e.attack === 'feint') && feint.f.armor < VITALS.armor,
+  `player armor ${feint.f.armor.toFixed(0)}`);
+
+const drones = runFight(10, () => ({}), { arena: coverArena, brain: once(isAtk('drones')), setup: ready });
+check('Hunter Drones phase through walls to reach a hidden player', drones.f.armor < VITALS.armor, `armor ${drones.f.armor.toFixed(0)}`);
+const cutDrone = runFight(0.5, (_f, t) => ({ attack: t === 0, aimZ: -1 }), {
+  setup: f => {
+    calm(f);
+    const p = f.player.pos;
+    f.projectiles.push({ id: 999, kind: 'drone', pos: { x: p.x, y: p.y + 1.2, z: p.z - 2 }, vel: { x: 0, y: 0, z: 0 }, ttl: 5, damage: 0, radius: 0.55, aoe: 0, gravity: 0, homing: 0, target: null, phasing: true, decision: -1 });
+  },
+});
+check('sword swings cut down drones', cutDrone.events.some(e => e.type === 'droneDestroyed') && !cutDrone.f.projectiles.some(p => p.kind === 'drone'));
+
+const strafe = (f: Fight) => ({ moveX: 1, sprint: true, ...lookAt(f, f.boss.pos) });
+const laserOpen = runFight(3, strafe, { brain: once(isAtk('laser')), setup: f => { placeAt(40)(f); ready(f); } });
+check('Sweeping Laser catches a strafing player in the open', laserOpen.f.armor === VITALS.armor - COUNTERS.laser.damage, `armor ${laserOpen.f.armor.toFixed(0)}`);
+const laserCharge = runFight(3, f => ({ moveZ: -1, sprint: true, ...lookAt(f, f.boss.pos) }), { brain: once(isAtk('laser')), setup: f => { placeAt(60)(f); ready(f); } });
+check('charging straight in slips under the Sweeping Laser', laserCharge.f.armor === VITALS.armor, `armor ${laserCharge.f.armor.toFixed(0)}`);
+const laserCover = runFight(3, () => ({}), { arena: coverArena, brain: once(isAtk('laser')), setup: ready });
+check('walls block the Sweeping Laser', laserCover.f.armor === VITALS.armor && laserCover.events.some(e => e.type === 'fire' && e.attack === 'laser'));
+
+// Play-style profile: hiding / dashing / brawling habits are picked up within ~20-30 s.
+const camper = runFight(40, () => ({}), { arena: coverArena, brain: waitBrain });
+const dodger = runFight(40, (_f, t) => ({ dash: t % 100 === 0, moveX: t % 200 < 100 ? 1 : -1 }), { brain: waitBrain, setup: f => { f.player.pos = { x: 0, y: heightAt(0, 50), z: 50 }; } });
+check('play-style profile reads a camper', describeStyle(camper.f.style).label === 'Camper', `${describeStyle(camper.f.style).label}: ${describeStyle(camper.f.style).traits.join(', ')}`);
+check('play-style profile reads a dodger', describeStyle(dodger.f.style).label === 'Dodger', `${describeStyle(dodger.f.style).label}: ${describeStyle(dodger.f.style).traits.join(', ')}`);
+
+// A move earns a share of the payoff of the attack it set up.
+{
+  let step = 0;
+  const huntThenSweep: Brain = (_f, _a, valid) => {
+    const want = [isMove('hunt'), isAtk('sweep')][step];
+    const i = want ? valid.find(k => want(ARMS[k])) : undefined;
+    if (i === undefined) return 0;
+    step++;
+    return i;
+  };
+  const hs = runFight(5, () => ({}), { brain: huntThenSweep, setup: f => { ready(f); f.player.pos = { x: 0, y: heightAt(0, 60), z: 60 }; } });
+  const [mv, sw] = hs.f.decisions;
+  check('a Hunt that sets up a Blade Sweep shares its reward', ARMS[mv.arm].kind === 'move' && sw.dealt > 0 && Math.abs(mv.reward - Math.min(1, rewardOf(mv) + REWARD.moveCredit * rewardOf(sw))) < 1e-9,
+    `hunt ${mv.reward.toFixed(2)}, sweep ${sw.reward.toFixed(2)}`);
+}
+
 // ---------- Learning brain (M4) ----------
-check('16 arms with a single 0.5 s wait', ARMS.length === 16 && ARMS.filter(a => a.kind === 'wait').length === 1 && ARMS[0].kind === 'wait' && ARMS[0].duration === 0.5);
+check('25 arms with a single 0.5 s wait', ARMS.length === 25 && ARMS.filter(a => a.kind === 'wait').length === 1 && ARMS[0].kind === 'wait' && ARMS[0].duration === 0.5);
 const openFight = createFight(arena, 1);
 const featsOpen = computeFeatures(openFight, arena);
-check('context: 20 finite, normalized features with bias 1', featsOpen.length === FEATURE_DIM && featsOpen[0] === 1 && featsOpen.every(v => Number.isFinite(v) && Math.abs(v) <= 1.5),
+check('context: 29 finite, normalized features with bias 1', featsOpen.length === FEATURE_DIM && FEATURE_DIM === 29 && featsOpen[0] === 1 && featsOpen.every(v => Number.isFinite(v) && Math.abs(v) <= 1.5),
   featsOpen.map(v => v.toFixed(2)).join(' '));
 const VIS = FEATURE_NAMES.indexOf('player visible');
 check('context: "player visible" sees walls', featsOpen[VIS] === 1 && computeFeatures(createFight(coverArena, 1), coverArena)[VIS] === 0);
@@ -451,8 +534,8 @@ check('reward: HP-fraction formula', Math.abs(rewardOf({ dealt: 24, taken: 0, co
   // hides behind a wall. Bolts/orbs hit the wall; mortars arc over it and dives land behind it.
   // It should learn to attack over the wall.
   const pol = createPolicy();
-  const isMortar = (a: number) => ARMS[a].kind === 'attack' && ['mortar', 'dive'].includes((ARMS[a] as { attack: string }).attack);
-  const isBlocked = (a: number) => ARMS[a].kind === 'attack' && ['volley', 'spread', 'homing'].includes((ARMS[a] as { attack: string }).attack);
+  const isMortar = (a: number) => ARMS[a].kind === 'attack' && ['mortar', 'dive', 'drones'].includes((ARMS[a] as { attack: string }).attack);
+  const isBlocked = (a: number) => ARMS[a].kind === 'attack' && ['volley', 'spread', 'homing', 'feint', 'laser'].includes((ARMS[a] as { attack: string }).attack);
   const usage: number[] = [];
   for (let fight = 0; fight < 15; fight++) {
     const f = createFight(coverArena, 100 + fight);
