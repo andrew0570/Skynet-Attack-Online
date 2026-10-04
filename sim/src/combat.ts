@@ -14,8 +14,8 @@ export const BOSS = {
   /** Hit radius of the core + blade ring (as rendered at 2x scale). */
   radius: 3.2,
   maxEnergy: 100,
-  /** Energy per second. With attack costs of 20-40 this caps sustained attacks at ~1 per 3 s. */
-  energyRegen: 9,
+  /** Energy per second. With attack costs of 20-40 this caps sustained attacks at ~1 per 2-3 s. */
+  energyRegen: 12,
   /** Minimum pause after every attack before the next decision. */
   globalCooldown: 0.5,
   /** Damage multiplier while stunned on the ground after a Dive Slam. */
@@ -43,7 +43,7 @@ export const ATTACKS: Record<AttackId, AttackSpec> = {
 };
 
 const PROJ = {
-  volley: { speed: 42, damage: 12, radius: 0.35, shots: 5 },
+  volley: { speed: 60, damage: 12, radius: 0.35, shots: 5 },
   spread: { speed: 30, damage: 8, radius: 0.35, shots: 7, fan: 0.55 },
   homing: { speed: 13, damage: 18, radius: 0.6, shots: 3, turn: 1.6, ttl: 7 },
   /** Lobbed upward at `launchVy` so shells peak high and drop steeply behind cover. */

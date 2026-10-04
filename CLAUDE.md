@@ -145,6 +145,10 @@ Run from the repo root after `. .\env.ps1`:
 | `npm run sim:smoke` | Headless movement checks for `sim/` (run after touching `sim/`) |
 | `npm run test:browser` | Drives the real client in headless Edge (needs `npm run dev`). `SAO_SLOW_CLOCK=1` simulates a high-refresh display; `SAO_SKILLS=1` tests skills; `SAO_BRAIN=1` tests the full learning loop (needs the DB); `SAO_URL` overrides the page |
 | `npx tsx tools/db-smoke.ts` | End-to-end brain test against the local DB: consent, validation, rate limit, training |
+| `npm run train:bots` | Bot training through the real server (`RUNS`, `BACKUP_EVERY` env; defaults 250 / 50) |
+| `npm run train:report` | Builds `backups/skynet-training.html` from the newest training run |
+| `npm run brain:backup` | Backs up the current brain to `backups/`; `-- --v0` writes the untrained v0 brain |
+| `npm run db:reset` | Wipes the local DB and republishes (fresh v0 brain) — back up first |
 | `npx tsc --noEmit -p server` | Type-check the server module (`spacetime build` skips it) |
 | `spacetime sql --server local skynet-attack-online "SELECT * FROM player"` | Inspect data |
 

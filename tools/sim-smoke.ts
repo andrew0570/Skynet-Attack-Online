@@ -440,7 +440,9 @@ check('reward: HP-fraction formula', Math.abs(rewardOf({ dealt: 24, taken: 0, co
   check('valid fight passes validation', validateSubmission(good) === null, `${good.arms.length} decisions`);
   check('tampered reward rejected', validateSubmission({ ...good, rewards: good.rewards.map((v, i) => (i === 0 ? 2 : v)) }) === 'reward out of range');
   check('unknown arm rejected', validateSubmission({ ...good, arms: good.arms.map((v, i) => (i === 0 ? 99 : v)) }) === 'unknown arm');
-  check('too many decisions for the fight length rejected', validateSubmission({ ...good, duration: 5 }) !== null);
+  // 3x the decisions crammed into 5 s: well past the 2.5 decisions/s limit, whatever the sample size.
+  const crammed = { ...good, duration: 5, arms: [...good.arms, ...good.arms, ...good.arms], contexts: [...good.contexts, ...good.contexts, ...good.contexts], rewards: [...good.rewards, ...good.rewards, ...good.rewards] };
+  check('too many decisions for the fight length rejected', validateSubmission(crammed) === 'too many decisions for the fight length', `${crammed.arms.length} decisions in 5 s`);
   check('out-of-range feature rejected', validateSubmission({ ...good, contexts: good.contexts.map((v, i) => (i === 1 ? 9 : v)) }) === 'feature out of range');
 }
 

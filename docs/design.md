@@ -59,8 +59,9 @@ Use **Three.js** in the browser:
   engine — that keeps movement fast, tight, and deterministic.
 
 ## 2b. Combat (built in M3 — `sim/src/combat.ts`)
-- **Skynet** perches 7 m above the pillar (1200 HP). An **energy bar** (max 100, +9/s) pays
-  for attacks (20–40 each) plus a 0.5 s pause after each, capping it at ~1 attack / 2.5–3 s.
+- **Skynet** perches 7 m above the pillar (1200 HP). An **energy bar** (max 100, +12/s since the
+  Oct 4 balance pass; was 9) pays for attacks (20–40 each) plus a 0.5 s pause after each,
+  capping it at ~1 attack / 2–3 s. Bolt Volley bolts fly at 60 m/s (was 42).
 - **Attacks** (telegraphed: core charges, aim line for ranged, red ground rings for landings):
   - Bolt Volley — 5 fast bolts, re-aimed per shot · Spread Shot — 7-bolt fan
   - Seeker Orbs — 3 slow homing orbs · Mortar — 4 lobbed shells that arc over walls (AoE)
