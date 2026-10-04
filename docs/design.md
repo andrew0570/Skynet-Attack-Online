@@ -1,4 +1,4 @@
-# Design: Skynet Assault Online (SAO)
+# Design: Skynet Attack Online (SAO)
 
 Status: theme **decided**; remaining items are proposals.
 

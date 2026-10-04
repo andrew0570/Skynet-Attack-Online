@@ -1,4 +1,4 @@
-# Skynet Assault Online (SAO)
+# Skynet Attack Online (SAO)
 
 **A browser boss fight against an AI that learns from every player who fights it.**
 
@@ -24,9 +24,22 @@ a first step toward that.
 
 ## What it does
 
-You drop into a crater arena to fight **Skynet**, a floating machine intelligence with a
-glowing core and orbiting blade rings. Movement is fast: sprint, jump, and dash past its
-attacks, then close in with your energy blade.
+You play an armored space hero with a laser sword and fold-out cybernetic wings. Your target
+is **Skynet**, a floating machine intelligence with a glowing red core, perched on a
+vine-covered pillar at the center of a scorched alien crater.
+
+The arena is built around a choice between speed and safety:
+
+- **Four open corridors** run straight to Skynet from the north, south, east, and west. They
+  are the fastest route in, and they leave you fully exposed to its attacks.
+- **Four ruined fortresses** fill the space between them. Each has a maze of crumbling
+  concrete walls, roofed upper levels to hide under, and walls that sink, rise, and slide to
+  open one path while closing another.
+- **Leaning skyscrapers**, half-buried in the sand, rise higher than Skynet itself. Climb
+  their vines and dive at it from above.
+
+Movement is fast and free: sprint, double jump, steer in mid-air, dash in any direction
+including straight up, climb glowing vines, wall-jump, and spread your wings to glide.
 
 Skynet picks every attack using a **learned policy shared by the whole player community**:
 
@@ -42,7 +55,12 @@ hero.
 ## How we built it
 
 - **Game:** TypeScript and [Three.js](https://threejs.org/) in the browser, with a custom
-  character controller tuned for fast movement.
+  character controller tuned for fast movement. The hero, Skynet, and the whole arena are
+  built and animated in code, with no imported 3D models.
+- **Arena:** generated from a fixed seed, so every player, the server, and the training bots
+  get exactly the same map. A custom collision system handles walls, ceilings, moving walls,
+  climbable surfaces, and tilted towers. The same line-of-sight check that decides whether
+  Skynet can hit you also keeps the camera from clipping through walls.
 - **Shared simulation:** all combat rules and AI logic live in one pure-TypeScript package
   with no rendering code. The browser, the game server, and the overnight training bots all
   run the same code.
@@ -70,6 +88,18 @@ _TODO_
 - Co-op raids, where squads fight one shared Skynet in real time.
 - Deeper learning models (deep reinforcement learning) trained on the collected fight data.
 - Dynamic, AI-driven dialogue: Skynet taunting and reacting to each player.
+
+## Controls
+
+| Action | Key |
+|---|---|
+| Move | WASD |
+| Look / aim | Mouse (click the game to capture it, Esc to release) |
+| Sprint | Shift |
+| Jump / double jump | Space |
+| Dash (follows your aim, including up and down) | Q or right-click |
+| Glide (in the air; look down to dive) | Hold Caps Lock |
+| Climb | Push into glowing vines; jump to kick off |
 
 ## Data and consent
 

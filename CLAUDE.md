@@ -1,4 +1,4 @@
-# Skynet Assault Online (SAO) — MHacks 2026
+# Skynet Attack Online (SAO) — MHacks 2026
 
 Hackathon project for MHacks 2026 (University of Michigan). This file is the source of
 truth for project context — keep it updated as decisions are made.
@@ -23,7 +23,7 @@ become dynamic conversations, and boss battles go from pre-ordered movesets to c
 adaptive fights. Deeper integration of AI brings games to life — the sci-fi games we dream of.
 
 ## Theme and naming
-- **Project:** *Skynet Assault Online* (**SAO**) — a nod to *Sword Art Online*, which inspired
+- **Project:** *Skynet Attack Online* (**SAO**) — a nod to *Sword Art Online*, which inspired
   the dream of realistic virtual worlds with truly intelligent game characters.
 - **Boss:** **Skynet** (from *The Terminator*) — AI as a dangerous overlord that learns and
   adapts. A floating machine intelligence: glowing red core + orbiting blade rings, procedurally
@@ -118,7 +118,7 @@ Schedule and done-criteria: [docs/milestones.md](docs/milestones.md).
   in every Claude PowerShell call) run `. .\env.ps1` first.
 - The path is under `OneDrive\Desktop`, but the user has **signed out of OneDrive** on this
   machine (Oct 3), so nothing syncs or locks files. If OneDrive is ever signed back in, move
-  the project out (e.g. `C:\dev\skynet-assault-online`, then `npm install` to rebuild the
+  the project out (e.g. `C:\dev\skynet-attack-online`, then `npm install` to rebuild the
   absolute-path workspace junctions in `node_modules/@sao`).
 
 ## Commands
@@ -127,14 +127,14 @@ Run from the repo root after `. .\env.ps1`:
 |---|---|
 | `npm install` | Install all workspace deps (single root `node_modules`) |
 | `npm run db:start` | Local SpacetimeDB on `127.0.0.1:3000` (keep running) |
-| `npm run db:publish` | Build + publish `server/` to local DB `skynet-assault-online` |
+| `npm run db:publish` | Build + publish `server/` to local DB `skynet-attack-online` |
 | `npm run db:generate` | Regenerate client bindings |
 | `npm run db:logs` | Module logs |
 | `npm run dev` | Client dev server → http://localhost:5173 |
 | `npm run build` | Type-check (client + sim) + production build of the client |
 | `npm run sim:smoke` | Headless movement checks for `sim/` (run after touching `sim/`) |
 | `npx tsc --noEmit -p server` | Type-check the server module (`spacetime build` skips it) |
-| `spacetime sql --server local skynet-assault-online "SELECT * FROM player"` | Inspect data |
+| `spacetime sql --server local skynet-attack-online "SELECT * FROM player"` | Inspect data |
 
 ## Working conventions
 - Hackathon pace: favor working demos over polish; hardcode/mock anything not on the demo path.

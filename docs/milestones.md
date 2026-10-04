@@ -1,4 +1,4 @@
-# Milestones — Skynet Assault Online (Sat Oct 3 → Sun Oct 4)
+# Milestones — Skynet Attack Online (Sat Oct 3 → Sun Oct 4)
 
 Planned at 7:51 PM Saturday. Devpost deadline: **Sun 12:00 PM**.
 Each milestone ends in a working, committed state. If a milestone runs over by more than

@@ -1,5 +1,5 @@
 {
-  "name": "skynet-assault-online",
+  "name": "skynet-attack-online",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -13,7 +13,7 @@
     "db:start": "spacetime start",
     "db:publish": "spacetime publish --server local -y",
     "db:generate": "spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path server",
-    "db:logs": "spacetime logs --server local skynet-assault-online",
+    "db:logs": "spacetime logs --server local skynet-attack-online",
     "sim:smoke": "tsx tools/sim-smoke.ts"
   },
   "devDependencies": {
