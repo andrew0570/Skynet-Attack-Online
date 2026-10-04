@@ -70,7 +70,7 @@ composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
 const hero = createHero();
-scene.add(hero.group);
+scene.add(hero.group, hero.worldFx);
 
 // Blob shadow: shows where you'll land during jumps and aimed dashes.
 const shadow = new THREE.Mesh(

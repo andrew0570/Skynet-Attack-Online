@@ -52,7 +52,8 @@ export const SKILLS = {
   /** 1 — lightning column strikes the aimed spot (clamped to range) after a short cast. */
   lightning: { cooldown: 7, castTime: 0.35, minRange: 6, maxRange: 35, radius: 4.5, damage: 80 },
   /** 2 — charge along the aim, invulnerable, slashing whatever you pass through. */
-  rush: { cooldown: 9, duration: 0.45, speed: 32, hitInterval: 0.075, maxHits: 6, reach: 3.5, damage: 16 },
+  // 8 slashes over the charge (one hit each, synced with the flurry animation).
+  rush: { cooldown: 9, duration: 0.45, speed: 32, slashes: 8, hitInterval: 0.45 / 8, maxHits: 8, reach: 3.5, damage: 12 },
   /** 3 — laser projectile from the sword toward the aim point; walls block it. */
   beam: { cooldown: 2.5, speed: 70, ttl: 1.6, radius: 0.45, damage: 40 },
 };

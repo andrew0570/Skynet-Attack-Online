@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, PLAYER, SWORD, type PlayerState } from '@sao/sim';
+import { clamp, PLAYER, SKILLS, SWORD, type PlayerState } from '@sao/sim';
 
 // Procedural armored space hero. Origin at the feet, facing +Z (its right hand is on -X).
 // Purely cosmetic: all gameplay (hitboxes, timings) lives in sim/.
@@ -79,6 +79,28 @@ const SWINGS = [
   { sx: [-1.35, -1.35], sz: [0.7, -1.4], twist: [0.5, -0.55] },
   { sx: [-2.9, -0.35], sz: [-0.15, -0.15], twist: [0, 0] },
 ];
+
+/**
+ * Blade Rush flurry: a pool of crescent trails, each rolled to a different slash angle
+ * (horizontal, diagonal, rising...) so overlapping slashes read as a storm of blades.
+ */
+const FLURRY_ROLLS = [0, 2.5, -0.7, 1.7, -2.3, 0.5, 3.0, -1.4];
+const FLURRY_LIFE = 0.16;
+function createFlurry(): { group: THREE.Group; trails: { pivot: THREE.Group; mat: THREE.MeshBasicMaterial; life: number }[] } {
+  // World-space group: each crescent stays where its slash happened, streaking the charge path.
+  const group = new THREE.Group();
+  const geo = new THREE.RingGeometry(0.7, 2.0, 20, 1, -Math.PI / 2 - 1.2, 2.4).rotateX(-Math.PI / 2);
+  const trails = Array.from({ length: 6 }, () => {
+    const mat = new THREE.MeshBasicMaterial({ color: CYAN.clone().multiplyScalar(2.8), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    // Pivot rolls around the forward (+Z) axis to tilt each slash plane.
+    const pivot = new THREE.Group();
+    pivot.add(new THREE.Mesh(geo, mat));
+    pivot.visible = false;
+    group.add(pivot);
+    return { pivot, mat, life: 0 };
+  });
+  return { group, trails };
+}
 
 /** Crescent light trail for each swing (horizontal arcs in front; vertical arc for the chop). */
 function createTrails(): THREE.Mesh[] {
@@ -206,6 +228,8 @@ const LAND_TIME = 0.16;
 
 export interface Hero {
   group: THREE.Group;
+  /** World-space effects (Blade Rush slash crescents); add to the scene, not the hero. */
+  worldFx: THREE.Group;
   update(p: PlayerState, dt: number, time: number): void;
 }
 
@@ -271,11 +295,14 @@ export function createHero(): Hero {
     torso,
     ...legs.map(l => l.hip)
   );
+  const flurry = createFlurry();
   const group = new THREE.Group();
   group.add(body, ...trails);
   let lastSwing = 0;
   let trailLife = 0;
   let trailIndex = 0;
+  let lastSlash = -1;
+  let nextFlurry = 0;
 
   const cur: Pose = {
     bodyY: 0, bodyPitch: 0, torsoPitch: 0,
@@ -364,6 +391,7 @@ export function createHero(): Hero {
 
   return {
     group,
+    worldFx: flurry.group,
     update(p, dt, time) {
       const hs = Math.hypot(p.vel.x, p.vel.z);
       phase += (dt * hs * Math.PI * 2) / (2.2 + hs * 0.15);
@@ -409,16 +437,28 @@ export function createHero(): Hero {
         trailLife = 0.2;
       }
       if (p.rushing) {
-        // Blade Rush flurry: rapid alternating slashes while charging.
-        const k = (time * 9) % 1;
-        const dir = Math.floor(time * 9) % 2 ? 1 : -1;
-        right.shoulder.rotation.x = -1.4;
-        right.shoulder.rotation.z = dir * (-1.3 + 2.0 * k);
+        // Blade Rush flurry: SKILLS.rush.slashes slashes spread evenly over the charge, each
+        // alternating sides at a different angle, each leaving its own crescent.
+        const progress = clamp(1 - p.dashTimer / SKILLS.rush.duration, 0, 0.999);
+        const slashes = SKILLS.rush.slashes;
+        const idx = Math.floor(progress * slashes);
+        const k = progress * slashes - idx;
+        const dir = idx % 2 ? 1 : -1;
+        if (idx !== lastSlash) {
+          lastSlash = idx;
+          // Drop the crescent into the world at the hero's chest, facing the charge, rolled.
+          const t = flurry.trails[nextFlurry++ % flurry.trails.length];
+          t.pivot.position.set(group.position.x, group.position.y + 1.2, group.position.z);
+          t.pivot.rotation.set(0, group.rotation.y, FLURRY_ROLLS[idx % FLURRY_ROLLS.length]);
+          t.pivot.scale.set(dir, 1, 1);
+          t.life = FLURRY_LIFE;
+        }
+        const e = k * (2 - k);
+        right.shoulder.rotation.x = -1.4 + Math.sin(idx * 2.1) * 0.6;
+        right.shoulder.rotation.z = dir * (-1.4 + 2.2 * e);
         right.elbow.rotation.x = -0.1;
-        torso.rotation.y = dir * (-0.5 + k);
+        torso.rotation.y = dir * (-0.55 + 1.1 * e);
         sword.rotation.set(SWORD_SWING.x, SWORD_SWING.y, 0);
-        trailIndex = dir > 0 ? 0 : 1;
-        trailLife = 0.12;
       } else if (p.swingTimer > 0) {
         const s = SWINGS[p.comboStep];
         const k = 1 - p.swingTimer / SWORD.swingTime;
@@ -430,6 +470,12 @@ export function createHero(): Hero {
         sword.rotation.set(SWORD_SWING.x, SWORD_SWING.y, 0);
       } else {
         sword.rotation.set(SWORD_READY.x, SWORD_READY.y, 0);
+      }
+      if (!p.rushing) lastSlash = -1;
+      for (const t of flurry.trails) {
+        t.life = Math.max(0, t.life - dt);
+        t.pivot.visible = t.life > 0;
+        t.mat.opacity = (t.life / FLURRY_LIFE) * 0.6;
       }
       trailLife = Math.max(0, trailLife - dt);
       trails.forEach((t, i) => {
