@@ -6,6 +6,8 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ImportBrainArmReducer from "../import_brain_arm_reducer";
+import ImportBrainMetaReducer from "../import_brain_meta_reducer";
 import RaidHitReducer from "../raid_hit_reducer";
 import RaidJoinReducer from "../raid_join_reducer";
 import RaidLeaveReducer from "../raid_leave_reducer";
@@ -14,6 +16,8 @@ import RaidUpdateReducer from "../raid_update_reducer";
 import SetConsentReducer from "../set_consent_reducer";
 import SubmitFightReducer from "../submit_fight_reducer";
 
+export type ImportBrainArmParams = __Infer<typeof ImportBrainArmReducer>;
+export type ImportBrainMetaParams = __Infer<typeof ImportBrainMetaReducer>;
 export type RaidHitParams = __Infer<typeof RaidHitReducer>;
 export type RaidJoinParams = __Infer<typeof RaidJoinReducer>;
 export type RaidLeaveParams = __Infer<typeof RaidLeaveReducer>;

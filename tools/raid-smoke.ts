@@ -1,12 +1,13 @@
 // End-to-end raid check against the local DB: join, start (bots fill the team), stream a
 // position, report a hit, and confirm the server-side raid loop advances.
 // Usage: npx tsx tools/raid-smoke.ts   (needs npm run db:start + the module published)
+// Another database: SAO_DB_URI=wss://maincloud.spacetimedb.com SAO_DB=<name> npx tsx tools/raid-smoke.ts
 import { DbConnection } from '../client/src/module_bindings';
 
 const conn: DbConnection = await new Promise((resolve, reject) => {
   DbConnection.builder()
-    .withUri('ws://127.0.0.1:3000')
-    .withDatabaseName('skynet-attack-online')
+    .withUri(process.env.SAO_DB_URI ?? 'ws://127.0.0.1:3000')
+    .withDatabaseName(process.env.SAO_DB ?? 'skynet-attack-online')
     .onConnect(c => c.subscriptionBuilder().onApplied(() => resolve(c)).subscribe(['SELECT * FROM raid', 'SELECT * FROM raid_member']))
     .onConnectError((_c, e) => reject(e))
     .build();

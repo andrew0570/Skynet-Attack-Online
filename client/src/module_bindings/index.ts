@@ -34,6 +34,8 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ImportBrainArmReducer from "./import_brain_arm_reducer";
+import ImportBrainMetaReducer from "./import_brain_meta_reducer";
 import RaidHitReducer from "./raid_hit_reducer";
 import RaidJoinReducer from "./raid_join_reducer";
 import RaidLeaveReducer from "./raid_leave_reducer";
@@ -141,6 +143,8 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("import_brain_arm", ImportBrainArmReducer),
+  __reducerSchema("import_brain_meta", ImportBrainMetaReducer),
   __reducerSchema("raid_hit", RaidHitReducer),
   __reducerSchema("raid_join", RaidJoinReducer),
   __reducerSchema("raid_leave", RaidLeaveReducer),

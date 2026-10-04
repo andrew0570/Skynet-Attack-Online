@@ -452,3 +452,45 @@ export const runRaids = spacetimedb.reducer({ onSchedule: raidTickTable }, { tim
 export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   leaveRaids(ctx, ctx.sender.toHexString());
 });
+
+// =============================================================================================
+// One-time brain import (deploying a trained brain to a fresh database, e.g. Maincloud)
+// =============================================================================================
+
+/** Imports are only accepted into a brand-new database: brain v0, no fights learned. */
+function assertFreshBrain(ctx: Ctx): void {
+  const meta = ctx.db.policyMeta.id.find(0);
+  if (!meta || meta.version !== 0 || meta.fights !== 0) throw new Error('brain import is only allowed into a fresh (v0) database');
+}
+
+/** Load one arm of a trained brain (from a backups/brain-*.json file). */
+export const importBrainArm = spacetimedb.reducer(
+  { arm: t.u32(), a: t.array(t.f64()), b: t.array(t.f64()), ainv: t.array(t.f64()), theta: t.array(t.f64()), n: t.u32(), rewardSum: t.f64() },
+  (ctx, row) => {
+    assertFreshBrain(ctx);
+    const d = FEATURE_DIM;
+    if (row.arm >= ARMS.length || row.a.length !== d * d || row.ainv.length !== d * d || row.b.length !== d || row.theta.length !== d) throw new Error('arm shape mismatch');
+    if (![...row.a, ...row.b, ...row.ainv, ...row.theta].every(Number.isFinite)) throw new Error('non-finite values');
+    ctx.db.policyArm.arm.update(row);
+  }
+);
+
+/** Finish an import: set the brain's version and lifetime stats (closes the import window). */
+export const importBrainMeta = spacetimedb.reducer(
+  { version: t.u32(), fights: t.u32(), decisions: t.u32(), rejected: t.u32(), wins: t.u32(), losses: t.u32() },
+  (ctx, meta) => {
+    assertFreshBrain(ctx);
+    if (meta.fights === 0) throw new Error('imported brain must have fights');
+    ctx.db.policyMeta.id.update({ id: 0, ...meta });
+    const arms = [...ctx.db.policyArm.iter()].sort((x, y) => x.arm - y.arm);
+    ctx.db.policySnapshot.insert({
+      version: meta.version,
+      at: ctx.timestamp,
+      fights: meta.fights,
+      theta: arms.flatMap(r => r.theta),
+      n: arms.map(r => r.n),
+      rewardSum: arms.map(r => r.rewardSum),
+    });
+  }
+);
+
