@@ -81,9 +81,14 @@ Schedule and done-criteria: [docs/milestones.md](docs/milestones.md).
   (pass in an RNG) so the server can own the sim later.
 - **Client (`client/`, `@sao/client`):** renders the sim with Three.js, reads input,
   subscribes to the policy, submits the fight log at fight end.
-- **Server (`server/`, `@sao/server`):** SpacetimeDB TypeScript module. Stores players
-  (consent), policy, fights, decisions; `submit_fight` validates the log, then applies the
-  bandit update and snapshots the policy.
+- **Brain (`sim/src/brain.ts`):** LinUCB features/model/validation shared by client, server,
+  and bots. Design: docs/design.md §2c.
+- **Server (`server/`, `@sao/server`):** SpacetimeDB TypeScript module (imports `@sao/sim`).
+  Tables: player (consent, rate limit), policy_meta, policy_arm, fight, policy_snapshot.
+  `submit_fight` validates the whole fight, then trains and bumps the version. Only the
+  server learns; clients freeze the weights per fight (`client/src/net.ts`).
+- **Client fight loop:** the fight only advances while the mouse is captured (Esc pauses);
+  `?autoplay` / `?shot` keep it running for tests and screenshots.
 - **Client bindings:** `client/src/module_bindings/` is generated — regenerate with
   `npm run db:generate` after changing server tables/reducers; never edit by hand.
 - SpacetimeDB 2.x TypeScript API reference: [docs/spacetimedb-guide.md](docs/spacetimedb-guide.md).
@@ -138,7 +143,8 @@ Run from the repo root after `. .\env.ps1`:
 | `npm run dev` | Client dev server → http://localhost:5173 (hot reload is OFF — refresh manually; see `client/vite.config.ts`) |
 | `npm run build` | Type-check (client + sim) + production build of the client |
 | `npm run sim:smoke` | Headless movement checks for `sim/` (run after touching `sim/`) |
-| `npm run test:browser` | Drives the real client in headless Edge (needs `npm run dev`). `SAO_SLOW_CLOCK=1` simulates a high-refresh display; `SAO_URL` overrides the page |
+| `npm run test:browser` | Drives the real client in headless Edge (needs `npm run dev`). `SAO_SLOW_CLOCK=1` simulates a high-refresh display; `SAO_SKILLS=1` tests skills; `SAO_BRAIN=1` tests the full learning loop (needs the DB); `SAO_URL` overrides the page |
+| `npx tsx tools/db-smoke.ts` | End-to-end brain test against the local DB: consent, validation, rate limit, training |
 | `npx tsc --noEmit -p server` | Type-check the server module (`spacetime build` skips it) |
 | `spacetime sql --server local skynet-attack-online "SELECT * FROM player"` | Inspect data |
 

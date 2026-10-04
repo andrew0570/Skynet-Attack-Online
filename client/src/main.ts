@@ -23,7 +23,9 @@ import {
   type PlayerInput,
   type Vec3,
 } from '@sao/sim';
+import { learnedBrain, resolveDecisions, toSubmission, type Brain, type FightSubmission } from '@sao/sim';
 import { createArenaMeshes } from './arenaMesh';
+import { connectBrain } from './net';
 import { ThirdPersonCamera } from './camera';
 import { createCombatFx } from './combatFx';
 import { createHero } from './hero';
@@ -94,6 +96,9 @@ const ui = {
   staminaText: el('stamina-text'),
   staminaRow: el('stamina-row'),
   reticle: el('reticle'),
+  brainStatus: el('brain-status'),
+  resultNote: el('result-note'),
+  consent: el('consent'),
   skillSlot: [0, 1, 2].map(i => el(`skill-${i}`)),
   skillCd: [0, 1, 2].map(i => el(`skill-cd-${i}`)),
   skillTime: [0, 1, 2].map(i => el(`skill-time-${i}`)),
@@ -101,6 +106,29 @@ const ui = {
   result: el('result'),
   resultTitle: el('result-title'),
 };
+
+// Consent: asked once per browser; the answer is remembered so a reset server gets re-told.
+const CONSENT_KEY = 'sao.consent';
+let consentAnswer: string | null = null;
+try {
+  consentAnswer = localStorage.getItem(CONSENT_KEY);
+} catch {
+  /* storage unavailable: ask every visit */
+}
+let consentAnswered = consentAnswer === 'yes' || consentAnswer === 'no';
+let consentResent = false;
+function answerConsent(yes: boolean): void {
+  net.setConsent(yes);
+  consentAnswered = true;
+  consentAnswer = yes ? 'yes' : 'no';
+  try {
+    localStorage.setItem(CONSENT_KEY, consentAnswer);
+  } catch {
+    /* fine */
+  }
+}
+el('consent-yes').addEventListener('click', () => answerConsent(true));
+el('consent-no').addEventListener('click', () => answerConsent(false));
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -110,15 +138,44 @@ window.addEventListener('resize', () => {
 });
 
 const [spawnX, spawnZ] = params.get('at')?.split(',').map(Number) ?? [arena.spawn.x, arena.spawn.z];
-const brain = params.has('peace') ? () => 0 /* always "wait" */ : heuristicBrain;
+// Skynet's shared brain (SpacetimeDB). Each fight freezes the weights when it starts; the fight
+// is submitted for training when it ends. Offline, the local placeholder AI takes over.
+const net = connectBrain(() => {});
+const peace: Brain = () => 0; // ?peace: always "wait"
+let brain: Brain = heuristicBrain;
+/** Shared-brain version this fight is using, or -1 (local AI / peace: never submitted). */
+let fightPolicyVersion = -1;
+let fightStarted = false;
+let submitted = false;
 let fightSeed = 1;
 
 function newFight() {
   const f = createFight(arena, fightSeed++);
   f.player.pos = { x: spawnX, y: heightAt(spawnX, spawnZ), z: spawnZ };
+  fightStarted = false;
+  submitted = false;
   return f;
 }
+
+/** Freeze the brain at the fight's first tick (by then the connection is usually up). */
+function startFight(): void {
+  fightStarted = true;
+  const policy = params.has('peace') ? null : net.snapshotPolicy();
+  brain = params.has('peace') ? peace : policy ? learnedBrain(policy) : heuristicBrain;
+  fightPolicyVersion = policy ? policy.version : -1;
+}
+
+/** Send a finished (or abandoned) fight to train the shared brain. */
+function submitFight(outcome: FightSubmission['outcome']): void {
+  if (submitted || fightPolicyVersion < 0 || net.status.consented !== true) return;
+  if (outcome === 'abandoned' && fight.time < 10) return;
+  submitted = true;
+  resolveDecisions(fight, true);
+  net.submit(toSubmission(fight, fightPolicyVersion, outcome));
+}
+
 let fight = newFight();
+if (params.has('t')) startFight();
 // ?t=<seconds>: fast-forward the fight (idle player) before rendering, for screenshots.
 for (let i = 0; i < Number(params.get('t') ?? 0) * 60; i++) stepFight(fight, arena, NO_INPUT, SIM_DT, brain);
 const prevPos: Vec3 = { ...fight.player.pos };
@@ -158,6 +215,13 @@ const lookDir = new THREE.Vector3(0, 0, -1);
   get fight() {
     return fight;
   },
+  get fightPolicyVersion() {
+    return fightPolicyVersion;
+  },
+  get submitted() {
+    return submitted;
+  },
+  net,
 };
 
 const BOSS_STATE_LABEL: Record<string, string> = { telegraph: 'CHARGING', recover: '', return: 'RETURNING' };
@@ -173,6 +237,7 @@ renderer.setAnimationLoop(() => {
   elapsed += frameDt;
 
   if (input.consumePressed('KeyR')) {
+    if (fight.outcome === 'active') submitFight('abandoned');
     fight = newFight();
     fx.reset();
     Object.assign(prevPos, fight.player.pos);
@@ -183,8 +248,12 @@ renderer.setAnimationLoop(() => {
   thirdPerson.rotate(dx, dy);
 
   camera.getWorldDirection(lookDir);
-  accumulator += frameDt;
+  // The fight only runs while you're playing (mouse captured); Esc pauses it.
+  // ?autoplay / ?shot keep it running for automated tests and screenshots.
+  const running = input.locked || params.has('autoplay') || params.has('shot');
+  accumulator = running ? accumulator + frameDt : 0;
   while (accumulator >= SIM_DT) {
+    if (!fightStarted) startFight();
     Object.assign(prevPos, fight.player.pos);
     Object.assign(prevBoss, fight.boss.pos);
     const events = stepFight(fight, arena, readInput(), SIM_DT, brain);
@@ -196,6 +265,7 @@ renderer.setAnimationLoop(() => {
     input.clearPressed();
     accumulator -= SIM_DT;
   }
+  if (fight.outcome !== 'active') submitFight(fight.outcome);
 
   // Interpolate between the last two sim states for smooth rendering at any refresh rate.
   const alpha = accumulator / SIM_DT;
@@ -265,6 +335,24 @@ renderer.setAnimationLoop(() => {
   ui.result.classList.toggle('hidden', fight.outcome === 'active');
   ui.result.className = fight.outcome === 'active' ? 'hidden' : fight.outcome;
   ui.resultTitle.textContent = fight.outcome === 'won' ? 'SKYNET DEFEATED' : fight.outcome === 'lost' ? 'TERMINATED' : '';
+  ui.resultNote.textContent = submitted ? 'Skynet is learning from this fight.' : '';
+
+  // Brain status under Skynet's name.
+  const s = net.status;
+  if (!s.connected) ui.brainStatus.textContent = 'LOCAL AI · OFFLINE';
+  else {
+    const using = fightStarted && fightPolicyVersion >= 0 ? fightPolicyVersion : s.version;
+    const newer = fightStarted && fightPolicyVersion >= 0 && s.version > fightPolicyVersion ? ` · v${s.version} next fight` : '';
+    ui.brainStatus.textContent = `NEURAL CORE v${using} · trained on ${s.fights} fights${newer}${s.consented === false ? ' · not learning from you' : ''}`;
+  }
+
+  if (s.connected && s.consented === false && consentAnswer === 'yes' && !consentResent) {
+    consentResent = true;
+    net.setConsent(true);
+  }
+  // One-time consent prompt (shown before you engage).
+  const showConsent = s.connected && s.consented === false && !consentAnswered && !params.has('shot') && !params.has('autoplay');
+  ui.consent.classList.toggle('hidden', !showConsent);
 
   composer.render();
 });

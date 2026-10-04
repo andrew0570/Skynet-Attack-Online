@@ -38,7 +38,12 @@ swing trail lands here too.
 - **Done when:** a full fight is playable start to finish, and both win and loss are possible.
 - **Cut line:** 3 moves (drop Volley); skip aim modes.
 
-## M4 — Learning brain + SpacetimeDB · 12:30 → 2:45 AM
+## M4 — Learning brain + SpacetimeDB · 12:30 → 2:45 AM ✅ (done ~12:15 AM)
+Built: LinUCB brain in `sim/src/brain.ts` (20 features, 16 arms, HP-fraction reward, exact
+inverse with forgetting), SpacetimeDB tables + `submit_fight` (validate whole fight, then
+train), client sync (`client/src/net.ts`) with per-fight frozen weights, consent screen,
+brain status line, fight pauses until engaged. Verified end-to-end in a real browser
+(fight with v1 → lost → trained to v2). Brain panel moved to Sunday.
 - `sim/brain.ts`: feature vector (~10 features), LinUCB arm selection, reward windows
   (damage dealt − λ·damage taken, clipped).
 - Server tables: `player` (consent — exists), `fight`, `decision`, `policy_arm`,

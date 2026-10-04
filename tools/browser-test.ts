@@ -3,7 +3,7 @@
 import puppeteer from 'puppeteer-core';
 
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const URL = process.env.SAO_URL ?? 'http://localhost:5173/?peace';
+const URL = process.env.SAO_URL ?? 'http://localhost:5173/?peace&autoplay';
 
 type V = { x: number; y: number; z: number };
 const browser = await puppeteer.launch({
@@ -55,7 +55,7 @@ results.push(['moves after pressing R', dist(s2.pos, s3.pos) > 1, `moved ${dist(
 
 // Skills: from the glade, looking up at Skynet, press 1 / 3 / 2 and check each fires.
 if (process.env.SAO_SKILLS === '1') {
-  await page.goto('http://localhost:5173/?peace&shot&at=0,26&pitch=-0.45');
+  await page.goto('http://localhost:5173/?peace&shot&autoplay&at=0,26&pitch=-0.45');
   await page.waitForFunction('window.__sao && window.__sao.fight', { timeout: 60000 });
   const skillState = () =>
     page.evaluate(() => {
@@ -74,6 +74,35 @@ if (process.env.SAO_SKILLS === '1') {
   await wait(1500);
   const hp1 = (await skillState()).hp;
   results.push(['skills damaged Skynet (aimed from the glade)', hp1 < hp0, `Skynet HP ${hp0} → ${hp1}`]);
+}
+
+// Learning loop (needs the local DB): consent, fight with the shared brain, lose, and check the
+// fight was submitted and trained the shared brain.
+if (process.env.SAO_BRAIN === '1') {
+  type Sao = { fight: { outcome: string; health: number; armor: number }; fightPolicyVersion: number; submitted: boolean; net: { status: { connected: boolean; version: number; consented: boolean | null }; setConsent(v: boolean): void } };
+  const sao = <T>(fn: (s: Sao) => T) => page.evaluate(fn as never, undefined) as Promise<T>;
+  await page.goto('http://localhost:5173/?autoplay');
+  await page.waitForFunction('window.__sao && window.__sao.net.status.connected', { timeout: 30000 });
+  await page.evaluate(() => (window as unknown as { __sao: Sao }).__sao.net.setConsent(true));
+  await page.waitForFunction('window.__sao.net.status.consented === true', { timeout: 10000 });
+  const v0 = await sao(() => (window as unknown as { __sao: Sao }).__sao.net.status.version);
+  await page.keyboard.press('KeyR'); // fresh fight: freezes the shared brain at its first tick
+  await page.waitForFunction('window.__sao.fightPolicyVersion >= 0', { timeout: 10000 });
+  const used = await sao(() => (window as unknown as { __sao: Sao }).__sao.fightPolicyVersion);
+  // Make it short: one hit ends it (still a real fight with real Skynet decisions).
+  await page.evaluate(() => {
+    const f = (window as unknown as { __sao: Sao }).__sao.fight;
+    f.armor = 0;
+    f.health = 1;
+  });
+  await page.waitForFunction("window.__sao.fight.outcome !== 'active'", { timeout: 180000 });
+  await page.waitForFunction(`window.__sao.net.status.version > ${v0}`, { timeout: 15000 }).catch(() => {});
+  const after = await sao(() => {
+    const s = (window as unknown as { __sao: Sao }).__sao;
+    return { submitted: s.submitted, version: s.net.status.version, outcome: s.fight.outcome };
+  });
+  results.push(['fight used the shared brain', used === v0, `fought with v${used}`]);
+  results.push(['finished fight trained the shared brain', after.submitted && after.version === v0 + 1, `outcome ${after.outcome}, brain v${v0} → v${after.version}`]);
 }
 
 for (const [name, ok, detail] of results) console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}  (${detail})`);
