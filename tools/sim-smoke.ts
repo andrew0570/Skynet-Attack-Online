@@ -7,12 +7,15 @@ import {
   generateArena,
   heightAt,
   makeBox,
+  moverSolid,
+  mulberry32,
   NO_INPUT,
-  platformSolid,
   raycast,
   SIM_DT,
   solidTop,
   stepPlayer,
+  towerFromBase,
+  towerSlices,
   type Arena,
   type PlayerInput,
   type PlayerState,
@@ -122,32 +125,78 @@ const noVines = sim(120, () => ({ moveZ: -1 }), { arena: wallArena, start: { x: 
 check('plain walls are not climbable', noVines.frames.every(f => !f.climbing && f.aboveGround < 0.01));
 
 const g30 = heightAt(0, 30);
-const shuttleArena: Arena = {
+// Phase -π/2: shift starts at 0 and reaches full displacement at t = period / 2.
+const sliderArena: Arena = {
   ...EMPTY_ARENA,
-  platforms: [{ base: makeBox('platform', 0, 30, 2, 2, 0, g30, g30 + 0.4), amp: { x: 5, y: 0, z: 0 }, period: 4, phase: 0 }],
+  movers: [{ base: makeBox('shifter', 0, 30, 2, 2, 0, g30 - 1, g30 + 0.4), amp: { x: 6, y: 0, z: 0 }, period: 4, phase: -Math.PI / 2 }],
 };
-const ride = sim(60, () => ({}), { arena: shuttleArena, setup: p => (p.pos.y = g30 + 0.4) });
-const shuttleX = platformSolid(shuttleArena.platforms[0], 60 * SIM_DT).x;
-check('moving platform carries the player', Math.abs(ride.p.pos.x - shuttleX) < 0.2 && ride.p.onGround, `player ${ride.p.pos.x.toFixed(2)} vs platform ${shuttleX.toFixed(2)}`);
+const ride = sim(120, () => ({}), { arena: sliderArena, setup: p => (p.pos.y = g30 + 0.4) });
+const sliderX = moverSolid(sliderArena.movers[0], 120 * SIM_DT).x;
+check('sliding wall carries a player standing on it', Math.abs(ride.p.pos.x - sliderX) < 0.2 && ride.p.onGround && sliderX > 5.9, `player ${ride.p.pos.x.toFixed(2)} vs wall ${sliderX.toFixed(2)}`);
 
-const liftArena: Arena = {
+const pushArena: Arena = {
   ...EMPTY_ARENA,
-  platforms: [{ base: makeBox('platform', 0, 30, 2, 2, 0, g30 + 4, g30 + 4.4), amp: { x: 0, y: 4, z: 0 }, period: 4, phase: -Math.PI / 2 }],
+  movers: [{ base: makeBox('shifter', -4, 30, 0.5, 3, 0, g30 - 1, g30 + 5), amp: { x: 8, y: 0, z: 0 }, period: 4, phase: -Math.PI / 2 }],
 };
-const lift = sim(120, () => ({}), { arena: liftArena, setup: p => (p.pos.y = g30 + 0.4) });
-const liftTop = solidTop(platformSolid(liftArena.platforms[0], 120 * SIM_DT));
-check('elevator lifts the player', lift.p.onGround && Math.abs(lift.p.pos.y - liftTop) < 0.15 && lift.p.pos.y > g30 + 7, `y=${lift.p.pos.y.toFixed(2)}`);
+const shove = sim(120, () => ({}), { arena: pushArena });
+check('sliding wall shoves a player aside', shove.p.pos.x > 4.8, `x=${shove.p.pos.x.toFixed(2)}`);
+
+const riseArena: Arena = {
+  ...EMPTY_ARENA,
+  movers: [{ base: makeBox('shifter', 0, 30, 2, 2, 0, g30 - 6, g30 - 0.5), amp: { x: 0, y: 5, z: 0 }, period: 4, phase: -Math.PI / 2 }],
+};
+const rise = sim(120, () => ({}), { arena: riseArena });
+check('rising wall lifts a player out of the ground', rise.p.onGround && rise.p.pos.y > g30 + 4.3, `y=${(rise.p.pos.y - g30).toFixed(2)} above ground`);
+
+const slabArena: Arena = { ...EMPTY_ARENA, statics: [makeBox('slab', 0, 30, 5, 5, 0, g30 + 3, g30 + 3.6)] };
+const bonk = sim(90, t => ({ jump: t === 0 }), { arena: slabArena });
+check('ceiling stops a jump', maxOf(bonk.frames, f => f.y - g30) <= 3 - 1.8 + 1e-6 && bonk.p.onGround, `peak ${maxOf(bonk.frames, f => f.y - g30).toFixed(2)}`);
+
+const ramp = towerFromBase(0, 30, -Math.PI / 2, (58 * Math.PI) / 180, 8, 6, 2.5, 2.5, false, 'ramp');
+const rampArena: Arena = { ...EMPTY_ARENA, statics: towerSlices(ramp, 0.4) };
+const walkUp = sim(150, () => ({ moveZ: -1 }), { arena: rampArena, start: { x: 0, z: 38 } });
+check('walk up a fallen-tower ramp', maxOf(walkUp.frames, f => f.aboveGround) > 5.5, `peak ${maxOf(walkUp.frames, f => f.aboveGround).toFixed(2)} m`);
 
 const losBlocked = raycast(wallArena, { x: 0, y: 1, z: 30 }, { x: 0, y: 1, z: 10 }, 0);
 const losOver = raycast(wallArena, { x: 0, y: wallTop + 2, z: 30 }, { x: 0, y: wallTop + 2, z: 10 }, 0);
 check('line of sight blocked by wall, clear over it', Math.abs(losBlocked - 0.47) < 0.01 && losOver === 1, `t=${losBlocked.toFixed(3)}`);
 
-// ---------- Generated maze ----------
+// ---------- Generated arena ----------
 const arena = generateArena();
+const count = (k: string) => arena.statics.filter(s => s.kind === k).length;
+check('arena generates walls, slabs, towers, shifting walls', count('wall') > 100 && count('slab') > 40 && arena.towers.length === 8 && arena.movers.length > 20,
+  `${count('wall')} walls, ${count('slab')} slabs, ${count('parapet')} parapets, ${arena.towers.length} towers, ${arena.movers.length} shifting walls, ${arena.statics.filter(s => s.climbable).length} climbable`);
 const spawnIdle = sim(120, () => ({}), { arena, start: arena.spawn });
-check('maze generates walls, vines, platforms', arena.statics.length > 60 && arena.statics.some(s => s.climbable) && arena.platforms.length === 17,
-  `${arena.statics.length} solids, ${arena.statics.filter(s => s.climbable).length} climbable, ${arena.platforms.length} platforms`);
 check('spawn is clear', Math.hypot(spawnIdle.p.pos.x - arena.spawn.x, spawnIdle.p.pos.z - arena.spawn.z) < 1e-6 && spawnIdle.p.onGround);
+
+// Cover analysis: how exposed is ground level to Skynet's perch?
+const eye = arena.skynetAnchor;
+const exposed = (x: number, z: number, t = 0) => raycast(arena, eye, { x, y: heightAt(x, z) + 1.2, z }, t) === 1;
+let corridorClear = 0;
+let corridorTotal = 0;
+for (let r = 26; r <= 96; r += 5) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const off of [-4, 0, 4]) {
+  corridorTotal++;
+  if (exposed(dx * r + dz * off, dz * r + dx * off)) corridorClear++;
+}
+let fortExposed = 0;
+let fortTotal = 0;
+const rng = mulberry32(5);
+while (fortTotal < 400) {
+  const a = rng() * Math.PI * 2;
+  const r = 30 + rng() * 64;
+  const x = Math.cos(a) * r;
+  const z = Math.sin(a) * r;
+  if (Math.abs(x) < 9 || Math.abs(z) < 9) continue;
+  fortTotal++;
+  if (exposed(x, z)) fortExposed++;
+}
+check('corridors are open lines of attack (> 90% visible to Skynet)', corridorClear / corridorTotal > 0.9, `${((100 * corridorClear) / corridorTotal).toFixed(0)}% visible`);
+check('fortresses give cover (< 35% of ground visible to Skynet)', fortExposed / fortTotal < 0.35, `${((100 * fortExposed) / fortTotal).toFixed(0)}% visible`);
+
+const quadRamp = arena.towers.find(t => t.style === 'ramp' && t.center.x > 0 && t.center.z > 0)!;
+const rampUp = sim(400, (_, p) => (p.onGround && p.pos.y > 6.5 ? {} : { moveX: Math.SQRT1_2, moveZ: Math.SQRT1_2 }), { arena, start: { x: 7, z: 7 } });
+check('glade ramp leads onto level 1', rampUp.p.onGround && rampUp.p.pos.y > 6.5, `y=${rampUp.p.pos.y.toFixed(2)} (ramp at ${quadRamp.center.x.toFixed(1)}, ${quadRamp.center.z.toFixed(1)})`);
+
 const pillarTop = solidTop(arena.pillar!);
 const pillarClimb = sim(360, (_, p) => (p.onGround && p.pos.y > pillarTop - 0.1 ? {} : { moveZ: -1 }), { arena, start: { x: 0, z: 4.5 } });
 check('climb the central pillar to the top', pillarClimb.p.onGround && Math.abs(pillarClimb.p.pos.y - pillarTop) < 1e-6, `y=${pillarClimb.p.pos.y.toFixed(1)} top=${pillarTop.toFixed(1)}`);

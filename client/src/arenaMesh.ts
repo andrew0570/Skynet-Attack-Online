@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { ARENA_RADIUS, heightAt, platformSolid, smoothstep, solidTop, type Arena, type Solid } from '@sao/sim';
-import { concreteTexture, vineTextures } from './textures';
+import { ARENA_RADIUS, heightAt, moverSolid, smoothstep, solidTop, towerAxis, type Arena, type Solid, type Tower } from '@sao/sim';
+import { concreteTexture, facadeTexture, vineTextures } from './textures';
 
-// Visual language: cyan = player, red = Skynet, amber = moving platforms, teal-green glow = climbable vines.
+// Visual language: cyan = player, red = Skynet, amber = shifting walls, teal-green glow = climbable vines.
 const AMBER = new THREE.Color(1, 0.55, 0.12).multiplyScalar(3);
 const SKYNET_RED = new THREE.Color(1, 0.12, 0.04).multiplyScalar(4);
 
@@ -12,7 +12,7 @@ function placeMatrix(s: Solid, localY: number): THREE.Matrix4 {
   return new THREE.Matrix4().makeRotationY(-s.rot).setPosition(s.x, localY, s.z);
 }
 
-/** World-space UVs (1 unit = 4 m) so the texture density is the same on every wall. */
+/** World-space UVs so texture density is the same on every wall. */
 function worldUVs(geo: THREE.BufferGeometry, metersPerTile: number): void {
   const pos = geo.attributes.position;
   const nrm = geo.attributes.normal;
@@ -26,6 +26,15 @@ function worldUVs(geo: THREE.BufferGeometry, metersPerTile: number): void {
     const nz = nrm.getZ(i);
     if (Math.abs(ny) > 0.5) uv.setXY(i, x / metersPerTile, z / metersPerTile);
     else uv.setXY(i, (x * -nz + z * nx) / metersPerTile, y / metersPerTile);
+  }
+}
+
+/** Scale a BoxGeometry's per-face UVs to its real dimensions (faces: ±x, ±y, ±z). */
+function boxUVs(geo: THREE.BufferGeometry, w: number, h: number, d: number, metersPerTile: number): void {
+  const uv = geo.attributes.uv;
+  const dims: [number, number][] = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let f = 0; f < 6; f++) {
+    for (let i = f * 4; i < f * 4 + 4; i++) uv.setXY(i, (uv.getX(i) * dims[f][0]) / metersPerTile, (uv.getY(i) * dims[f][1]) / metersPerTile);
   }
 }
 
@@ -51,11 +60,10 @@ function wallGeometry(s: Solid, tint: number): THREE.BufferGeometry {
   return geo;
 }
 
-/** Vine sheets on both long faces of a climbable wall, from the ground up to the top. */
+/** Vine sheets on both long faces of a climbable wall, from its base (or the ground) to the top. */
 function wallVines(s: Solid, rand: () => number): THREE.BufferGeometry[] {
-  const ground = heightAt(s.x, s.z);
-  const top = solidTop(s);
-  const h = top - ground + 0.3;
+  const bottom = Math.max(heightAt(s.x, s.z), s.y);
+  const h = solidTop(s) - bottom + 0.3;
   const w = s.hx * 2 * (0.75 + rand() * 0.2);
   return [1, -1].map(side => {
     const geo = new THREE.PlaneGeometry(w, h);
@@ -64,9 +72,44 @@ function wallVines(s: Solid, rand: () => number): THREE.BufferGeometry[] {
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (w / 3) + ou, uv.getY(i) * (h / 3));
     if (side < 0) geo.rotateY(Math.PI);
     geo.translate(0, 0, side * (s.hz + 0.04));
-    geo.applyMatrix4(placeMatrix(s, ground + h / 2 - 0.3));
+    geo.applyMatrix4(placeMatrix(s, bottom + h / 2 - 0.3));
     return geo;
   });
+}
+
+/** World matrix of a tilted tower box: local X along the (tilted) lean direction, Y along the axis. */
+function towerMatrix(t: Tower): THREE.Matrix4 {
+  const a = towerAxis(t);
+  const s = Math.sin(t.tilt);
+  const c = Math.cos(t.tilt);
+  const xb = new THREE.Vector3(c * Math.cos(t.heading), -s, c * Math.sin(t.heading));
+  const yb = new THREE.Vector3(a.x, a.y, a.z);
+  const zb = new THREE.Vector3().crossVectors(xb, yb);
+  return new THREE.Matrix4().makeBasis(xb, yb, zb).setPosition(t.center.x, t.center.y, t.center.z);
+}
+
+function createTower(t: Tower, facade: THREE.Material, plain: THREE.Material, vineMat: THREE.Material): THREE.Group {
+  const group = new THREE.Group();
+  const w = t.halfWidth * 2;
+  const h = t.halfLength * 2;
+  const d = t.halfDepth * 2;
+  const geo = new THREE.BoxGeometry(w, h, d);
+  boxUVs(geo, w, h, d, t.style === 'tower' ? 8 : 4);
+  const body = new THREE.Mesh(geo, t.style === 'tower' ? facade : plain);
+  body.applyMatrix4(towerMatrix(t));
+  group.add(body);
+  if (t.climbable) {
+    // Vines overgrow the up-facing side (the natural climbing face); the facade shows elsewhere.
+    const vg = new THREE.PlaneGeometry(d, h);
+    const uv = vg.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * d) / 3, (uv.getY(i) * h) / 3);
+    vg.rotateY(-Math.PI / 2);
+    vg.translate(-t.halfWidth - 0.06, 0, 0);
+    const vines = new THREE.Mesh(vg, vineMat);
+    vines.applyMatrix4(towerMatrix(t));
+    group.add(vines);
+  }
+  return group;
 }
 
 function createPillar(pillar: Solid, anchor: THREE.Vector3, concrete: THREE.Material, vineMat: THREE.Material): { group: THREE.Group; tether: THREE.MeshBasicMaterial } {
@@ -79,8 +122,7 @@ function createPillar(pillar: Solid, anchor: THREE.Vector3, concrete: THREE.Mate
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * ((Math.PI * 2 * pillar.r) / 4), uv.getY(i) * (pillar.height / 4));
   geo.translate(pillar.x, pillar.y + pillar.height / 2, pillar.z);
   scorchColors(geo, 0.9);
-  const column = new THREE.Mesh(geo, concrete);
-  group.add(column);
+  group.add(new THREE.Mesh(geo, concrete));
 
   const vh = top - ground;
   const vines = new THREE.CylinderGeometry(pillar.r + 0.06, pillar.r + 0.06, vh, 28, 1, true);
@@ -115,28 +157,31 @@ function createPillar(pillar: Solid, anchor: THREE.Vector3, concrete: THREE.Mate
   return { group, tether: tetherMat };
 }
 
-function createPlatformMesh(s: Solid): THREE.Group {
+/** A shifting wall: concrete slab with amber seams so players learn that it moves. */
+function createShifterMesh(s: Solid, concrete: THREE.Material): THREE.Group {
   const group = new THREE.Group();
-  const metal = new THREE.MeshStandardMaterial({ color: 0x2a2e35, metalness: 0.7, roughness: 0.4, flatShading: true });
-  const edge = new THREE.MeshBasicMaterial({ color: AMBER });
   const w = s.hx * 2;
-  const d = s.hz * 2;
   const h = s.height;
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), metal);
+  const d = s.hz * 2;
+  const geo = new THREE.BoxGeometry(w, h, d);
+  boxUVs(geo, w, h, d, 4);
+  const slab = new THREE.Mesh(geo, concrete);
   slab.position.y = h / 2;
   group.add(slab);
-  const t = 0.06;
-  for (const [x, z, sx, sz] of [[0, d / 2, w, t], [0, -d / 2, w, t], [w / 2, 0, t, d], [-w / 2, 0, t, d]]) {
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(sx, t, sz), edge);
-    strip.position.set(x, h + 0.01, z);
-    group.add(strip);
+  const seam = new THREE.MeshBasicMaterial({ color: AMBER });
+  const t = 0.07;
+  for (const side of [1, -1]) {
+    for (const y of [h - 0.35, h * 0.55]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(w * 0.96, t, t), seam);
+      strip.position.set(0, y, side * (d / 2 + 0.01));
+      group.add(strip);
+    }
+    for (const x of [-w * 0.3, w * 0.3]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(t, h * 0.5, t), seam);
+      strip.position.set(x, h * 0.75, side * (d / 2 + 0.01));
+      group.add(strip);
+    }
   }
-  const thruster = new THREE.Mesh(
-    new THREE.CircleGeometry(Math.min(w, d) * 0.3, 16).rotateX(Math.PI / 2),
-    new THREE.MeshBasicMaterial({ color: AMBER, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })
-  );
-  thruster.position.y = -0.02;
-  group.add(thruster);
   return group;
 }
 
@@ -147,6 +192,8 @@ export function createArenaMeshes(arena: Arena): { group: THREE.Group; update(t:
 
   const concreteMap = concreteTexture();
   const concrete = new THREE.MeshStandardMaterial({ map: concreteMap, vertexColors: true, roughness: 0.95, envMapIntensity: 0.2 });
+  const concretePlain = new THREE.MeshStandardMaterial({ map: concreteMap, roughness: 0.95, envMapIntensity: 0.2, color: 0xb0a89e });
+  const facade = new THREE.MeshStandardMaterial({ map: facadeTexture(), roughness: 0.95, envMapIntensity: 0.2, color: 0xa39a8f });
   const vineTex = vineTextures();
   const vineMat = new THREE.MeshStandardMaterial({
     map: vineTex.map,
@@ -162,12 +209,14 @@ export function createArenaMeshes(arena: Arena): { group: THREE.Group; update(t:
   const walls: THREE.BufferGeometry[] = [];
   const vines: THREE.BufferGeometry[] = [];
   for (const s of arena.statics) {
-    if (s.shape !== 'box') continue;
-    walls.push(wallGeometry(s, 0.85 + rand() * 0.2));
+    if (s.shape !== 'box' || s.kind === 'tower') continue;
+    walls.push(wallGeometry(s, s.kind === 'slab' ? 0.8 : 0.85 + rand() * 0.2));
     if (s.climbable) vines.push(...wallVines(s, rand));
   }
   group.add(new THREE.Mesh(mergeGeometries(walls), concrete));
   if (vines.length) group.add(new THREE.Mesh(mergeGeometries(vines), vineMat));
+
+  for (const t of arena.towers) group.add(createTower(t, facade, concretePlain, vineMat));
 
   let tether: THREE.MeshBasicMaterial | null = null;
   if (arena.pillar) {
@@ -194,8 +243,8 @@ export function createArenaMeshes(arena: Arena): { group: THREE.Group; update(t:
   }
   group.add(debris);
 
-  const platformMeshes = arena.platforms.map(p => {
-    const mesh = createPlatformMesh(p.base);
+  const shifterMeshes = arena.movers.map(mv => {
+    const mesh = createShifterMesh(mv.base, concretePlain);
     group.add(mesh);
     return mesh;
   });
@@ -203,10 +252,10 @@ export function createArenaMeshes(arena: Arena): { group: THREE.Group; update(t:
   return {
     group,
     update(t: number) {
-      arena.platforms.forEach((p, i) => {
-        const s = platformSolid(p, t);
-        platformMeshes[i].position.set(s.x, s.y, s.z);
-        platformMeshes[i].rotation.y = -s.rot;
+      arena.movers.forEach((mv, i) => {
+        const s = moverSolid(mv, t);
+        shifterMeshes[i].position.set(s.x, s.y, s.z);
+        shifterMeshes[i].rotation.y = -s.rot;
       });
       if (tether) tether.opacity = 0.55 + 0.25 * Math.sin(t * 5);
     },

@@ -1,4 +1,4 @@
-import { platformOffset, platformSolid, solidTop, type Arena, type Solid } from './arena';
+import { moverOffset, moverSolid, solidTop, type Arena, type Solid } from './arena';
 import { ARENA_WALK_RADIUS, PLAYER } from './config';
 import { approachAngle, clamp, vec3, type Vec3 } from './math';
 import { heightAt } from './terrain';
@@ -40,8 +40,8 @@ export interface PlayerState {
   climbing: boolean;
   wallNX: number;
   wallNZ: number;
-  /** Index into arena.platforms of the platform being stood on, or -1. */
-  platform: number;
+  /** Index into arena.movers of the shifting wall being stood on, or -1. */
+  mover: number;
 }
 
 export function createPlayer(x: number, z: number): PlayerState {
@@ -61,7 +61,7 @@ export function createPlayer(x: number, z: number): PlayerState {
     climbing: false,
     wallNX: 0,
     wallNZ: 0,
-    platform: -1,
+    mover: -1,
   };
 }
 
@@ -145,7 +145,7 @@ function pushOut(s: Solid, x: number, z: number): { nx: number; nz: number; dept
 
 /**
  * Advance the player one tick. `time` is the sim time at the start of the tick (drives
- * moving platforms). Deterministic: same inputs + arena + time => same result.
+ * shifting walls). Deterministic: same inputs + arena + time => same result.
  */
 export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena: Arena, time: number): void {
   p.coyote = Math.max(0, p.coyote - dt);
@@ -154,11 +154,11 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
   p.invuln = Math.max(0, p.invuln - dt);
   if (input.jump) p.jumpBuffer = PLAYER.jumpBuffer;
 
-  // Ride the platform we're standing on.
-  if (p.platform >= 0 && p.onGround) {
-    const pl = arena.platforms[p.platform];
-    const a = platformOffset(pl, time);
-    const b = platformOffset(pl, time + dt);
+  // Ride the shifting wall we're standing on.
+  if (p.mover >= 0 && p.onGround) {
+    const m = arena.movers[p.mover];
+    const a = moverOffset(m, time);
+    const b = moverOffset(m, time + dt);
     p.pos.x += b.x - a.x;
     p.pos.y += b.y - a.y;
     p.pos.z += b.z - a.z;
@@ -204,9 +204,9 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
       p.jumpBuffer = 0;
       p.climbing = false;
     } else if (into > 0.3) {
-      // Climb, pressing gently into the surface to keep contact.
-      p.vel.x = -p.wallNX * 2;
-      p.vel.z = -p.wallNZ * 2;
+      // Climb, pressing into the surface to keep contact (leaning towers recede as you climb).
+      p.vel.x = -p.wallNX * 3;
+      p.vel.z = -p.wallNZ * 3;
       p.vel.y = PLAYER.climbSpeed;
     } else {
       p.climbing = false; // let go
@@ -262,21 +262,31 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     }
   }
 
-  // Solids at the start and end of this tick (platforms move).
-  const solids: { s: Solid; prevTop: number; platform: number }[] = [];
-  for (const s of arena.statics) solids.push({ s, prevTop: solidTop(s), platform: -1 });
-  arena.platforms.forEach((pl, i) => solids.push({ s: platformSolid(pl, time + dt), prevTop: solidTop(platformSolid(pl, time)), platform: i }));
+  // Solids at the start and end of this tick (shifting walls move).
+  const solids: { s: Solid; prevTop: number; prevBottom: number; mover: number }[] = [];
+  for (const s of arena.statics) solids.push({ s, prevTop: solidTop(s), prevBottom: s.y, mover: -1 });
+  arena.movers.forEach((m, i) => {
+    const prev = moverSolid(m, time);
+    solids.push({ s: moverSolid(m, time + dt), prevTop: solidTop(prev), prevBottom: prev.y, mover: i });
+  });
 
-  // Walls: solids whose top was above our step height last tick block us horizontally.
+  // Classify each solid by where we were last tick: above it (floor), below it (ceiling), or
+  // beside it (wall).
   const wasClimbing = p.climbing;
   p.climbing = false;
   let climbTop = 0;
-  for (const { s, prevTop } of solids) {
+  for (const { s, prevTop, prevBottom } of solids) {
     const top = solidTop(s);
-    if (prevTop <= prevFeet + PLAYER.stepHeight) continue; // a floor candidate, not a wall
+    if (prevTop <= prevFeet + PLAYER.stepHeight) continue; // floor candidate
     if (p.pos.y >= top || p.pos.y + PLAYER.height <= s.y) continue;
     const hit = pushOut(s, p.pos.x, p.pos.z);
     if (!hit) continue;
+    if (prevFeet + PLAYER.height <= prevBottom + 0.05) {
+      // Ceiling: bump our head instead of being shoved sideways.
+      p.pos.y = s.y - PLAYER.height;
+      if (p.vel.y > 0) p.vel.y = 0;
+      continue;
+    }
     p.pos.x += hit.nx * hit.depth;
     p.pos.z += hit.nz * hit.depth;
     const vn = p.vel.x * hit.nx + p.vel.z * hit.nz;
@@ -304,13 +314,13 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
 
   // Floors: terrain, plus tops of solids we were above (or within a step of) last tick.
   let support = heightAt(p.pos.x, p.pos.z);
-  let supportPlatform = -1;
-  for (const { s, prevTop, platform } of solids) {
+  let supportMover = -1;
+  for (const { s, prevTop, mover } of solids) {
     if (prevTop > prevFeet + PLAYER.stepHeight) continue;
     const top = solidTop(s);
     if (top > support && overFootprint(s, p.pos.x, p.pos.z, PLAYER.radius * 0.5)) {
       support = top;
-      supportPlatform = platform;
+      supportMover = mover;
     }
   }
 
@@ -321,12 +331,12 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.pos.y = support;
     p.vel.y = Math.max(p.vel.y, 0);
     p.onGround = true;
-    p.platform = supportPlatform;
+    p.mover = supportMover;
     refillAirMoves(p);
     p.coyote = PLAYER.coyoteTime;
   } else {
     p.onGround = false;
-    p.platform = -1;
+    p.mover = -1;
   }
 
   if (Math.hypot(p.vel.x, p.vel.z) > 0.5 && !p.climbing) {

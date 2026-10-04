@@ -80,6 +80,27 @@ export function concreteTexture(): THREE.CanvasTexture {
   return toTexture(c);
 }
 
+/** Ruined tower facade: concrete floor bands with dark, partly shattered window openings. 1 tile ≈ 8 m. */
+export function facadeTexture(): THREE.CanvasTexture {
+  const [c, g] = canvas(512, 512);
+  g.drawImage(concreteTexture().image as HTMLCanvasElement, 0, 0);
+  g.fillStyle = 'rgba(20,16,14,0.25)';
+  for (let y = 0; y < 512; y += 128) g.fillRect(0, y, 512, 10); // floor slabs
+  for (let fy = 0; fy < 4; fy++) {
+    for (let fx = 0; fx < 4; fx++) {
+      const x = fx * 128 + 18;
+      const y = fy * 128 + 30;
+      if (Math.random() < 0.12) continue; // bricked up
+      g.fillStyle = Math.random() < 0.15 ? '#2a1d14' : '#0d0b0a';
+      g.fillRect(x, y, 92, 80);
+      // Jagged broken edges
+      g.fillStyle = '#5f574e';
+      for (let i = 0; i < 6; i++) g.fillRect(x + Math.random() * 92, y + (Math.random() < 0.5 ? 0 : 74), 6 + Math.random() * 14, 6);
+    }
+  }
+  return toTexture(c);
+}
+
 /**
  * Alien vines: dark teal strands with leaves (color + alpha) and a matching emissive map of
  * bioluminescent bulbs, so climbable surfaces read from across the maze. 1 tile ≈ 3 m.

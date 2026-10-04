@@ -19,7 +19,7 @@ Q / right-click dash. Tunables in `sim/src/config.ts` (`PLAYER`).
 - **Done when:** you can run, jump, and dash around the crater and it feels fast and responsive.
 - **Cut line:** flat ground with a circular boundary wall instead of the heightmap.
 
-## M2.5 — Hero + maze arena · 8:40 → ~9:45 PM ✅ (added)
+## M2.5 — Hero + maze arena · 8:40 → 9:22 PM ✅ (added; M3+ times below include ~30 min buffer)
 Armored hero + laser sword + bloom; 100 m maze arena with pillar, vines, moving platforms,
 collision, camera wall-avoidance, `raycast` line of sight. Schedule below shifted to match.
 

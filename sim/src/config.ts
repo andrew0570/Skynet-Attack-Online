@@ -5,7 +5,7 @@ export const SIM_DT = 1 / 60;
 export const ARENA_RADIUS = 100;
 export const ARENA_WALK_RADIUS = ARENA_RADIUS;
 export const TERRAIN_SEED = 1984;
-/** Maze layout seed (Judgment Day, 1997). Same seed => identical arena on client, server, bots. */
+/** Arena layout seed (Judgment Day, 1997). Same seed => identical arena on client, server, bots. */
 export const ARENA_SEED = 1997;
 
 export const PILLAR = {
@@ -15,8 +15,19 @@ export const PILLAR = {
   skynetHover: 7,
 };
 
-/** Ring walls of the maze (radii, meters). The glade inside the first ring is the main arena. */
-export const MAZE_RINGS = [30, 44, 58, 72, 86];
+export const LAYOUT = {
+  /** Open ground around the pillar. */
+  gladeRadius: 24,
+  /** The four cardinal corridors (Skynet's lines of attack) are 2x this wide. */
+  corridorHalfWidth: 7,
+  /** Fortress grid cell size (m). */
+  cell: 10,
+  wallThickness: 1,
+  /** Floor slab bottoms (absolute heights) for the covered upper levels. */
+  level1: 6,
+  level2: 12,
+  slabThickness: 0.6,
+};
 
 export const PLAYER = {
   radius: 0.4,

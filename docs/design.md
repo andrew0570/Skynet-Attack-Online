@@ -17,24 +17,34 @@ Status: theme **decided**; remaining items are proposals.
 Swords vs. magic vs. human boss: a humanoid boss needs animation work that a solo 24h build
 can't afford; a monster/construct with procedural motion can look great with primitives.
 
-## 2a. Arena (decided, built Sat ~9:30 PM)
+## 2a. Arena (decided, v2 built Sat ~10:15 PM)
 Scorched alien desert crater, **100 m walkable radius**, generated deterministically from
-`ARENA_SEED` in `sim/src/arena.ts` (identical on client, server, bots).
+`ARENA_SEED` in `sim/src/arena.ts` (identical on client, server, bots). Tunables in `LAYOUT`.
 - **Central pillar** (r 3.5 m, 16 m tall, vine-covered) — Skynet hovers 7 m above its crown,
-  tethered by a red energy beam. Three **elevators** cycle from the ground to the pillar top.
-- **Glade** (r < 30): open combat space with low rubble cover (1.4–2.6 m, vaultable).
-- **Maze** (Maze Runner-style): five concentric rings of decaying concrete walls (r 30–86) with
-  doorways and collapsed low sections, plus radial walls turning the annuli into corridors.
-  Outer run (r 86–100) is open.
-- **Vines** (~30% of tall walls + the pillar): push into them to climb, jump to wall-jump off,
-  auto-mantle at the top. Grabbing vines refills air jump/dash. Bioluminescent bulbs make
-  climbable surfaces readable from afar.
-- **Moving platforms**: pillar elevators, lifts beside maze walls (ride up to run the wall
-  tops), elevated shuttles sliding along corridors and the outer run.
-- **Color language:** cyan = player, red = Skynet, amber = platforms, teal-green = climbable.
-- **Combat intent (M3):** Skynet's ranged attacks use `raycast()` line of sight, so walls and
-  rubble are real cover; Skynet's melee/slam attacks force it down from the pillar, opening
-  windows to strike. Elevators and pillar vines give a vertical route to hit it at its perch.
+  tethered by a red energy beam. Reach it by climbing the vines or from the tall towers.
+- **Glade** (r < 24): open combat space with low vaultable rubble flanking each diagonal.
+- **Four cardinal corridors** (14 m wide, N/E/S/W, glade → rim): fast, fully exposed lanes —
+  Skynet's lines of attack (smoke test: 100% of corridor ground visible from Skynet).
+- **Four walled fortresses** between the corridors, on a 10 m grid:
+  - Ground-level maze (randomized DFS + loops), tall outer walls facing corridors/glade with
+    doorways, some doorways gated by rising/sinking walls.
+  - **Covered levels**: level-1 slabs at 6 m (~50% of cells) and level-2 slabs at 12 m, with
+    upper-level walls and parapets for cover (only ~12% of fortress ground visible to Skynet).
+  - **Shifting maze**: ~45 walls total that sink into the ground and rise again, or slide one
+    cell along their line into a neighboring gap (alternating which path is blocked). Eased
+    motion with holds at each end; amber seams mark them.
+  - A **fallen-tower ramp** from the glade up onto level 1 (diagonal, ~32° slope).
+  - A **leaning ruined skyscraper** (12–22° tilt, ~32 m tall, half-buried), vine face for
+    climbing — a perch above Skynet's height for dive attacks.
+- **Vines**: push into them to climb, jump to wall-jump off, auto-mantle at the top. Grabbing
+  vines refills air jump/dash. Climbable walls under slabs are flush with the slab top so you
+  can mantle onto the level above.
+- **Physics**: walls, floors (step-up 0.45 m), ceilings (head bump), riding shifting walls,
+  being shoved by sliding walls; tilted towers collide as stacks of exact cross-section slices.
+- **Color language:** cyan = player, red = Skynet, amber = shifting walls, teal = climbable.
+- **Combat intent (M3):** Skynet's ranged attacks use `raycast()` line of sight, so corridors
+  are deadly and fortress walls/roofs are real cover; close-range attacks force Skynet down
+  from the pillar, opening windows to strike.
 
 ## 2. Map — not Unreal
 Unreal is the wrong tool here: no browser export (HTML5 was dropped), Pixel Streaming needs

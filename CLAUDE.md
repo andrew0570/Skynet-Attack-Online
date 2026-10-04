@@ -32,9 +32,10 @@ adaptive fights. Deeper integration of AI brings games to life — the sci-fi ga
   and the community's own fights are what make Skynet smarter.
 - **Player:** armored space hero with a laser sword (procedural model + animation in
   `client/src/hero.ts`); sprint, jump + double jump, aimed 3D dash, vine climbing.
-- **Arena:** 100 m scorched-desert crater with a Maze Runner-style ring maze, decaying
-  concrete walls, climbable vines, moving platforms, and Skynet atop a central pillar.
-  See design.md §2a.
+- **Arena:** 100 m scorched-desert crater: Skynet atop a central pillar, four open cardinal
+  corridors (its lines of attack), four walled multi-level fortresses with a shifting maze
+  (sinking/sliding walls), leaning half-buried towers, fallen-tower ramps, climbable vines.
+  No moving platforms. See design.md §2a.
 - Use "Skynet" in code and UI (not "Warden" — that was a placeholder name).
 
 ## Idea
