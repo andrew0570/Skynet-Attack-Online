@@ -26,7 +26,9 @@ const BACKUP_EVERY = Number(process.env.BACKUP_EVERY ?? 50);
 const IDENTITIES = Number(process.env.BOT_IDENTITIES ?? 12);
 const MAX_FIGHT = 120;
 const OUT = join(process.cwd(), 'backups');
-const STAMP = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+/** Names this training round in file names: brain-<round>-it0050-v50.json, training-<round>.json. */
+const ROUND = process.env.ROUND ? `round${process.env.ROUND}` : STAMP;
 mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -63,7 +65,7 @@ function currentPolicy(): Policy {
 /** Full local copy of the shared brain (meta, every arm's model, all snapshots). */
 function backup(run: number): string {
   const m = meta();
-  const file = join(OUT, `brain-${STAMP}-run${String(run).padStart(3, '0')}-v${m.version}.json`);
+  const file = join(OUT, `brain-${ROUND}-it${String(run).padStart(4, "0")}-v${m.version}.json`);
   const data = {
     exportedAt: new Date().toISOString(),
     run,
@@ -93,7 +95,8 @@ const stats: RunStat[] = [];
 const arena = generateArena();
 const rng = mulberry32(20261004);
 const t0 = Date.now();
-console.log(`Training: ${RUNS} runs, backups every ${BACKUP_EVERY}, ${IDENTITIES} bot identities. Brain starts at v${meta().version}.`);
+console.log(`Training ${ROUND}: ${RUNS} runs, backups every ${BACKUP_EVERY}, ${IDENTITIES} bot identities. Brain starts at v${meta().version}.`);
+console.log(`  backup → ${backup(0)}`); // the starting brain (iteration 0)
 
 for (let run = 1; run <= RUNS; run++) {
   const policy = currentPolicy();
@@ -148,10 +151,10 @@ for (let run = 1; run <= RUNS; run++) {
     );
   }
   if (run % BACKUP_EVERY === 0 || run === RUNS) console.log(`  backup → ${backup(run)}`);
-  writeFileSync(join(OUT, `training-${STAMP}.json`), JSON.stringify({ startedAt: STAMP, runs: RUNS, stats }, null, 1));
+  writeFileSync(join(OUT, `training-${ROUND}.json`), JSON.stringify({ startedAt: STAMP, round: ROUND, runs: RUNS, stats }, null, 1));
 }
 
 const rejected = stats.filter(s => !s.accepted).length;
-console.log(`Done: ${RUNS} runs in ${((Date.now() - t0) / 1000).toFixed(0)} s, ${rejected} rejected. Brain now v${meta().version}. Stats: backups/training-${STAMP}.json`);
+console.log(`Done: ${RUNS} runs in ${((Date.now() - t0) / 1000).toFixed(0)} s, ${rejected} rejected. Brain now v${meta().version}. Stats: backups/training-${ROUND}.json`);
 for (const b of [reader, ...bots]) b.disconnect();
 process.exit(0);

@@ -91,6 +91,7 @@
   .tip b { font-weight: 500; }
 
   .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+  .table-wrap.scroll { max-height: 520px; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 640px; }
   th, td { padding: 8px 14px; text-align: right; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
   th:first-child, td:first-child { text-align: left; }
@@ -149,8 +150,16 @@
   </section>
 
   <section>
-    <div class="section-head"><h2>Per-block log</h2><p class="note">Bot styles rotate aggressor → kiter → hider → dodger every run.</p></div>
+    <div class="section-head"><h2>By bot style</h2><p class="note">Bot styles rotate aggressor → kiter → hider → dodger every run.</p></div>
     <div class="table-wrap"><table>
+      <thead><tr><th>Bot style</th><th>Skynet wins (all)</th><th id="style-head-a"></th><th id="style-head-b"></th><th id="style-head-c"></th><th id="style-head-d"></th></tr></thead>
+      <tbody id="style-rows"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Per-block log</h2><p class="note">One row per 10 runs.</p></div>
+    <div class="table-wrap scroll"><table>
       <thead><tr><th>Runs</th><th>Skynet wins</th><th>Bot wins</th><th>Timeouts</th><th>Skynet dmg / fight</th><th>Skynet HP left</th><th>Avg reward</th><th>Brain</th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
@@ -181,7 +190,14 @@ for (let i = 0; i < DATA.stats.length; i += 10) {
   });
 }
 const pct = v => `${Math.round(v * 100)}%`;
-const first = blocks.slice(0, 5), last = blocks.slice(-5);
+// Compare the first and last ~10% of the round (at least 50 runs).
+const WIN = Math.max(5, Math.round(blocks.length / 10));
+const WIN_RUNS = WIN * 10;
+const first = blocks.slice(0, WIN), last = blocks.slice(-WIN);
+if (DATA.title) {
+  document.title = DATA.title;
+  document.getElementById('headline').textContent = DATA.title;
+}
 const mean = (arr, k) => arr.reduce((a, b) => a + b[k], 0) / arr.length;
 const totalRuns = DATA.stats.length;
 const skyWins = DATA.stats.filter(s => s.outcome === 'skynet').length;
@@ -193,13 +209,31 @@ document.getElementById('lede').textContent =
   `The brain went from v${v0} to v${v1}. Skynet won ${skyWins} of ${totalRuns} fights; ${rejected === 0 ? 'no fights were rejected' : rejected + ' were rejected by validation'}.`;
 
 const fig = [
-  ['Skynet win rate', `${pct(mean(last, 'skynet'))}`, `first 50 runs ${pct(mean(first, 'skynet'))}`],
-  ['Damage dealt / fight', `${Math.round(mean(last, 'dmg'))}`, `first 50 runs ${Math.round(mean(first, 'dmg'))}`],
-  ['Avg decision reward', mean(last, 'reward').toFixed(3), `first 50 runs ${mean(first, 'reward').toFixed(3)}`],
+  ['Skynet win rate', `${pct(mean(last, 'skynet'))}`, `first ${WIN_RUNS} runs ${pct(mean(first, 'skynet'))}`],
+  ['Damage dealt / fight', `${Math.round(mean(last, 'dmg'))}`, `first ${WIN_RUNS} runs ${Math.round(mean(first, 'dmg'))}`],
+  ['Avg decision reward', mean(last, 'reward').toFixed(3), `first ${WIN_RUNS} runs ${mean(first, 'reward').toFixed(3)}`],
   ['Brain version', `v${v1}`, `started at v${v0}`],
 ];
 document.getElementById('figures').innerHTML = fig.map(([l, v, d]) =>
-  `<div class="figure"><span class="label">${l}${l === 'Brain version' ? '' : ' · last 50'}</span><span class="value">${v}</span><span class="delta">${d}</span></div>`).join('');
+  `<div class="figure"><span class="label">${l}${l === 'Brain version' ? '' : ` · last ${WIN_RUNS}`}</span><span class="value">${v}</span><span class="delta">${d}</span></div>`).join('');
+
+// By bot style: first vs last window.
+(function styles() {
+  const n = DATA.stats.length, w = Math.min(WIN_RUNS, Math.floor(n / 2));
+  const head = DATA.stats.slice(0, w), tail = DATA.stats.slice(-w);
+  const names = [...new Set(DATA.stats.map(s => s.style))];
+  const rate = (arr, st) => { const a = arr.filter(s => s.style === st); return a.length ? a.filter(s => s.outcome === 'skynet').length / a.length : 0; };
+  const dmg = (arr, st) => { const a = arr.filter(s => s.style === st); return a.length ? a.reduce((x, s) => x + s.skynetDamage, 0) / a.length : 0; };
+  document.getElementById('style-rows').innerHTML = names.map(st => {
+    const total = DATA.stats.filter(s => s.style === st);
+    const wins = total.filter(s => s.outcome === 'skynet').length;
+    return `<tr><td>${st}</td><td>${wins} / ${total.length}</td><td>${pct(rate(head, st))}</td><td><span class="pill ${rate(tail, st) > 0 ? 'sky' : 'zero'}">${pct(rate(tail, st))}</span></td><td>${Math.round(dmg(head, st))}</td><td>${Math.round(dmg(tail, st))}</td></tr>`;
+  }).join('');
+  document.getElementById('style-head-a').textContent = `Skynet wins · first ${w}`;
+  document.getElementById('style-head-b').textContent = `Skynet wins · last ${w}`;
+  document.getElementById('style-head-c').textContent = `Dmg / fight · first ${w}`;
+  document.getElementById('style-head-d').textContent = `Dmg / fight · last ${w}`;
+})();
 
 const NS = 'http://www.w3.org/2000/svg';
 function el(tag, attrs, parent) {
@@ -240,7 +274,8 @@ function tooltip(id) {
       el('rect', { x, y: top + (acc + v < 1 ? 1 : 0), width: bw, height: Math.max(0, bottom - top - (acc > 0 ? 1 : 0) - (acc + v < 1 ? 1 : 0)), rx: 2, fill: color }, svg);
       acc += v;
     }
-    if (i % 2 === 0 || blocks.length <= 13) {
+    const every = Math.ceil(blocks.length / 12);
+    if ((i + 1) % every === 0 || blocks.length <= 13) {
       const t = el('text', { x: x + bw / 2, y: H - B + 16, 'text-anchor': 'middle' }, svg); t.textContent = b.to;
     }
     const hit = el('rect', { x: L + slot * i, y: T, width: slot, height: ih, class: 'hit' }, svg);
@@ -313,7 +348,7 @@ document.getElementById('rows').innerHTML = blocks.map(b => `<tr>
   <td>${b.reward.toFixed(3)}</td><td>v${b.version}</td></tr>`).join('');
 
 document.getElementById('backups').innerHTML = DATA.backups.map(b =>
-  `<li><span class="run">after run ${b.run}</span><span>v${b.version}</span><span class="file">${b.file}</span></li>`).join('');
+  `<li><span class="run">${b.run === 0 ? 'start' : `after run ${b.run}`}</span><span>v${b.version}</span><span class="file">${b.file}</span></li>`).join('');
 
 document.getElementById('method').textContent =
   `Each run: a fresh fight in the shared simulation, a bot (aggressor, kiter, hider, or dodger, with random aim accuracy and reaction skill) against Skynet using the latest shared brain, ` +
