@@ -134,7 +134,7 @@ Goal: make Skynet's learning visible as *counters to how you play*, not just bet
   dominant habit: Sniper · Camper · Brawler · Pillar climber · Dodger · Aerialist · Runner.
 - **Mobility** (move arms, 6 energy, flown at 24 m/s, 0.35–2 s): **Hunt** (hover 7 m from you,
   inside Blade Sweep range) · **Flank** (nearest point 20 m around you with line of sight) ·
-  **Rise** (+12 m) · **Retreat** (back to the perch). Hover height clears fortress roofs.
+  **Rise** (+12 m; every move is capped at 35 m above the ground — 45 m until Oct 4 morning, which brain v1500 trained with) · **Retreat** (back to the perch). Hover height clears fortress roofs.
   Dive Slam now returns to wherever Skynet dove from.
 - **Style counters:** **Reflect Shield** (1.6 s; sword beams bounce back for 30, sword/rush
   hits do 15 + knockback, lightning is absorbed — vs beam spammers and brawlers) ·

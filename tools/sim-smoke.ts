@@ -409,6 +409,12 @@ check('Hunt: Skynet leaves its perch and closes to sweep range', hunt.events.som
 const flank = runFight(4, () => ({}), { arena: coverArena, brain: once(isMove('flank')), setup: ready });
 check('Flank: Skynet moves to regain line of sight on a hidden player', !bossCanSee(createFight(coverArena, 1), coverArena) && bossCanSee(flank.f, coverArena),
   `now at ${flank.f.boss.pos.x.toFixed(1)}, ${flank.f.boss.pos.y.toFixed(1)}, ${flank.f.boss.pos.z.toFixed(1)}`);
+{
+  const riser: Brain = (_f, _a, valid) => valid.find(i => isMove('rise')(ARMS[i])) ?? 0;
+  let peak = 0;
+  runFight(15, f => ((peak = Math.max(peak, f.boss.pos.y - heightAt(f.boss.pos.x, f.boss.pos.z))), {}), { brain: riser, setup: ready });
+  check(`Rise stops at the ${MOVES.maxAlt} m altitude ceiling`, peak > MOVES.maxAlt - 3 && peak <= MOVES.maxAlt + 1e-6, `peak ${peak.toFixed(1)} m`);
+}
 const back = runFight(3, () => ({}), { brain: once(isMove('retreat')), setup: f => { ready(f); f.boss.pos = { x: 30, y: 20, z: 30 }; } });
 check('Retreat: Skynet flies back to its perch', Math.hypot(back.f.boss.pos.x - back.f.boss.perch.x, back.f.boss.pos.y - back.f.boss.perch.y, back.f.boss.pos.z - back.f.boss.perch.z) < 1e-6);
 

@@ -84,7 +84,9 @@ export const MOVES = {
   /** Flank: look for a sightline from this far away. */
   flankRange: 20,
   rise: 12,
-  maxAlt: 45,
+  /** Altitude ceiling (m above the ground below) for every move — keeps Skynet within reach of a
+   *  player jumping from the pillar top or a tower. Brain v1500 was trained with 45 m. */
+  maxAlt: 35,
 };
 
 const PROJ = {
@@ -603,7 +605,8 @@ function startAction(f: FightState, arena: Arena, armIndex: number, context: num
   }
   if (arm.kind === 'move') {
     b.energy -= MOVES.cost;
-    const to = moveTarget(f, arena, arm.move);
+    const target = moveTarget(f, arena, arm.move);
+    const to = { ...target, y: Math.min(target.y, heightAt(target.x, target.z) + MOVES.maxAlt) };
     b.moveFrom = { ...b.pos };
     b.moveTo = to;
     b.moveTime = clamp(len(sub(to, b.pos)) / MOVES.speed, 0.35, 2);
