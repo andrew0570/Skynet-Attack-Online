@@ -1,6 +1,7 @@
 // Two real clients raid together: both join from the start screen, one starts the raid, and we
 // check the team, live movement sync, hit reporting, and the server-run Skynet.
 // Usage: npm run dev + local DB, then: npx tsx tools/raid-browser-test.ts [screenshotDir]
+// Live site: SAO_SITE=https://andrew0570.github.io/Skynet-Attack-Online/ npx tsx tools/raid-browser-test.ts
 import puppeteer, { type Page } from 'puppeteer-core';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,7 +20,7 @@ const open = async (b: typeof ba, name: string, color: string): Promise<Page> =>
   const p = await b.newPage();
   await p.setViewport({ width: 960, height: 540 });
   p.on('pageerror', e => console.log(`[${name}] page error:`, String(e)));
-  await p.goto('http://localhost:5173/?autoplay&pitch=-0.45');
+  await p.goto(`${process.env.SAO_SITE ?? 'http://localhost:5173/'}?autoplay&pitch=-0.45`);
   await p.waitForFunction('window.__sao && window.__sao.net.status.connected', { timeout: 60000 });
   await p.evaluate(
     (n, c) => {

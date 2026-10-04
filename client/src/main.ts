@@ -292,11 +292,6 @@ function applyColor(hex: string): void {
 startForm.addEventListener('change', e => {
   const t = e.target as HTMLInputElement;
   if (t.name === 'color') applyColor(t.value);
-  if (t.name === 'mode') {
-    ui.startFine.textContent = t.value === 'raid'
-      ? 'In a raid, your callsign and color are shown to your team. They are deleted from the server when you leave.'
-      : 'Your callsign and color only live in this browser tab. They are never sent or saved.';
-  }
   if (t.name === 'consent') {
     startGo.disabled = false;
     startGo.textContent = 'Enter the arena';
@@ -314,6 +309,8 @@ startForm.addEventListener('submit', e => {
   // and keys typed into form fields don't reach the game).
   (document.activeElement as HTMLElement | null)?.blur();
   mode = startForm.querySelector<HTMLInputElement>('input[name="mode"]:checked')?.value === 'raid' ? 'raid' : 'solo';
+  fight = newFight();
+  fx.reset();
   if (mode === 'raid') joinRaid();
 });
 // Tests and screenshots skip the start screen.
@@ -373,6 +370,19 @@ function updateRaidUi(dt: number, status: string): void {
     ui.team.innerHTML = '<div class="title">RAID TEAM</div>' + members.map(m => `<div class="t${m.dead ? ' down' : ''}"><b style="color:${m.color}">${escapeHtml(m.name)}${me && m.id === me.id ? ' (you)' : ''}</b><span>${Math.round(m.dealt)} dmg</span><div class="bar"><div style="width:${Math.max(0, m.health)}%"></div></div></div>`).join('');
   }
 }
+/** After a fight: back to the start screen (choices kept), leaving any raid. */
+function returnToMenu(): void {
+  if (mode === 'raid') net.raid.leave();
+  mode = 'solo';
+  raidWasActive = false;
+  fight = newFight();
+  fx.reset();
+  if (document.pointerLockElement) document.exitPointerLock();
+  startScreen.classList.remove('hidden');
+  startGo.disabled = !startForm.querySelector('input[name="consent"]:checked');
+  startGo.focus();
+}
+
 function escapeHtml(t: string): string {
   return t.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
@@ -495,11 +505,11 @@ renderer.setAnimationLoop(() => {
   const raidStatus = mode === 'raid' ? raidClient.status() : 'none';
   const raidMode = mode === 'raid' && (raidStatus === 'active' || raidStatus === 'won' || raidStatus === 'lost');
   if (input.consumePressed('KeyR')) {
-    if (mode === 'raid') {
-      // A raid can't be restarted mid-fight; once it's over, R finds a new raid.
-      if (raidStatus === 'won' || raidStatus === 'lost') joinRaid();
-    } else {
-      if (fight.outcome === 'active') submitFight('abandoned');
+    const over = mode === 'raid' ? raidStatus === 'won' || raidStatus === 'lost' : fight.outcome !== 'active';
+    if (over) returnToMenu();
+    else if (mode === 'solo') {
+      // Mid-fight in solo, R restarts (a raid can't be restarted).
+      submitFight('abandoned');
       fight = newFight();
       fx.reset();
       Object.assign(prevPos, fight.player.pos);
@@ -664,7 +674,7 @@ renderer.setAnimationLoop(() => {
   ui.resultTitle.textContent = ending === 'won' ? 'SKYNET DEFEATED' : ending === 'lost' ? 'TERMINATED' : '';
   const who = playerName ? (ending === 'won' ? `Well fought, ${playerName}. ` : `${playerName} has fallen. `) : '';
   ui.resultNote.textContent = raidMode
-    ? (ending === 'won' ? 'The resistance prevails. Press R for a new raid.' : 'The raid has fallen. Press R for a new raid.')
+    ? (ending === 'won' ? 'The resistance prevails.' : 'The raid has fallen.')
     : who + (submitted ? 'Skynet is learning from this fight.' : '');
   calloutTimer = Math.max(0, calloutTimer - frameDt);
   ui.callout.classList.toggle('hidden', calloutTimer <= 0 || params.has('shot'));
