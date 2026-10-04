@@ -9,5 +9,6 @@ export * from './terrain';
 export * from './arena';
 export * from './player';
 export * from './combat';
+export * from './brain';
 
 export const BOSS_NAME = 'Skynet';

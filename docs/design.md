@@ -86,6 +86,34 @@ Use **Three.js** in the browser:
 - **Decision log** (`fight.decisions`): per decision, damage dealt and damage taken — the
   reward signal for M4.
 
+## 2c. Learning brain — final M4 design (decided Sat 11:40 PM; supersedes §3–§6 details)
+- **Model:** disjoint LinUCB — one ridge-regression model per arm over a 20-feature context.
+  Score = θ·x + α·√(xᵀA⁻¹x); pick the best *valid* arm. Per arm we store A (d×d), b, and the
+  cached A⁻¹ and θ. Update: A ← γA + (1−γ)λI + xxᵀ, b ← γb + r·x, then recompute A⁻¹ exactly
+  (d = 20: ~8k flops) — forgetting (γ ≈ 0.999) without the numerical drift of rank-1 inverse
+  updates. Deterministic: same weights + context ⇒ same choice.
+- **Arms (16):** wait 0.5 s · {volley, spread, homing, mortar} × {direct, lead, flank} ·
+  sweep · dive × {direct, lead}. Validity: energy affordable; sweep only when close; dive ≤ 75 m.
+- **Context (20, normalized):** bias · distance · height diff · player visible · under roof ·
+  horizontal speed · closing speed · airborne · climbing · stamina · can-dodge-now · health ·
+  armor · lightning/rush/beam ready · Skynet energy · Skynet HP · Skynet projectiles in flight ·
+  player's recent dodge rate.
+- **Cadence:** a decision whenever Skynet is free — after an attack's recovery + 0.5 s pause,
+  or 0.5 s after a wait (≈ every 0.5 s while holding back).
+- **Reward (HP-fraction):** `clip(dealt/30 − taken/240 − 0.1·cost/40, −1, 1)`. *Dealt* = damage
+  from the projectiles/hits that decision caused (even if they land later); *taken* = damage
+  Skynet takes from that decision until the next. Scored once its window ended and all its
+  projectiles resolved (all forced at fight end). No win/loss term (win rate is the metric).
+- **Where it runs:** choices in the client's sim with weights **frozen at fight start** (the
+  version shown on screen). At fight end the client calls `submit_fight` with every
+  (context, arm, reward); the server **validates the whole fight first**, then applies all
+  updates, bumps the policy version, and snapshots every 10 fights. Clients subscribe and pick
+  up new weights for their next fight.
+- **Validation (M4):** consent required; 5–1800 s duration; ≤ 2.5 decisions/s and ≤ 600 per
+  fight; arm ids valid; contexts finite, in range, bias = 1; rewards in [−1, 1]; ≥ 5 s between
+  submissions per identity. Rejected fights are recorded with a reason, never learned from.
+  **Stretch (M5):** server replays the fight from seed + input log (the sim is deterministic).
+
 ## 3. AI algorithm
 ### What the AI controls
 Split the boss into two layers, like most shipped game AI:

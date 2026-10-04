@@ -57,8 +57,7 @@ export type Arm = { kind: 'wait'; duration: number } | { kind: 'attack'; attack:
 
 const AIMS: AimMode[] = ['direct', 'lead', 'flank'];
 export const ARMS: Arm[] = [
-  { kind: 'wait', duration: 0.6 },
-  { kind: 'wait', duration: 1.6 },
+  { kind: 'wait', duration: 0.5 },
   ...(['volley', 'spread', 'homing', 'mortar'] as const).flatMap(attack => AIMS.map(aim => ({ kind: 'attack' as const, attack, aim }))),
   { kind: 'attack', attack: 'sweep', aim: 'direct' },
   { kind: 'attack', attack: 'dive', aim: 'direct' },
@@ -112,14 +111,23 @@ export interface Projectile {
   decision: number;
 }
 
-/** One Skynet decision and what came of it — the training signal for M4. */
+/** One Skynet decision and what came of it — the learning brain's training sample. */
 export interface Decision {
   time: number;
   arm: number;
-  /** Damage Skynet dealt to the player because of this decision. */
+  /** The context (feature vector) Skynet saw when it decided. */
+  context: number[];
+  /** Energy spent. */
+  cost: number;
+  /** Damage Skynet dealt to the player because of this decision (its projectiles/hits). */
   dealt: number;
-  /** Damage Skynet took while this decision was playing out. */
+  /** Damage Skynet took from this decision until the next one. */
   taken: number;
+  /** When the next decision was made (Infinity until then). */
+  windowEnd: number;
+  /** Scored once its window ended and all its projectiles resolved (forced at fight end). */
+  resolved: boolean;
+  reward: number;
 }
 
 export type FightEvent =
@@ -165,6 +173,8 @@ export interface FightState {
   /** Which side (+1/-1, relative to Skynet's line of fire) the player dashed to most recently. */
   dodgeSide: number;
   decisions: Decision[];
+  /** Recent Skynet attack outcomes on the player: 1 = dodged (i-frames), 0 = hit. Newest last. */
+  recentDodges: number[];
   /** Seconds left on each skill's cooldown, in SKILL_ORDER (lightning, rush, beam). */
   skillCd: number[];
   /** Lightning strike waiting to land. */
@@ -175,8 +185,23 @@ export interface FightState {
   shots: PlayerShot[];
 }
 
-/** Picks an arm index from `valid` (all valid for the current state). */
-export type Brain = (f: FightState, arena: Arena, valid: number[]) => number;
+/**
+ * Picks an arm index from `valid` (all valid for the current state). `context` is the feature
+ * vector for this decision (see brain.ts), recorded with the decision for learning.
+ */
+export type Brain = (f: FightState, arena: Arena, valid: number[], context: number[]) => number;
+
+/** Feature extractor, injected by brain.ts (avoids a circular import). */
+let contextOf: (f: FightState, arena: Arena) => number[] = () => [];
+export function setContextExtractor(fn: (f: FightState, arena: Arena) => number[]): void {
+  contextOf = fn;
+}
+
+const RECENT_DODGES = 8;
+function recordDodge(f: FightState, dodged: boolean): void {
+  f.recentDodges.push(dodged ? 1 : 0);
+  if (f.recentDodges.length > RECENT_DODGES) f.recentDodges.shift();
+}
 
 export function createFight(arena: Arena, seed = 1): FightState {
   const perch = { ...arena.skynetAnchor };
@@ -197,6 +222,7 @@ export function createFight(arena: Arena, seed = 1): FightState {
     rng: mulberry32(seed),
     dodgeSide: 1,
     decisions: [],
+    recentDodges: [],
     skillCd: [0, 0, 0],
     lightning: null,
     rushHitTimer: 0,
@@ -278,9 +304,13 @@ function damagePlayer(f: FightState, amount: number, from: Vec3, decision: numbe
   if (f.outcome !== 'active') return;
   const p = f.player;
   if (p.invuln > 0 || f.hurt > 0) {
-    if (p.invuln > 0) events.push({ type: 'dodged', pos: { ...p.pos } });
+    if (p.invuln > 0) {
+      events.push({ type: 'dodged', pos: { ...p.pos } });
+      recordDodge(f, true);
+    }
     return;
   }
+  recordDodge(f, false);
   // Armor absorbs first; the overflow hits health.
   const toArmor = Math.min(amount, f.armor);
   const toHealth = Math.min(amount - toArmor, f.health);
@@ -339,11 +369,14 @@ function muzzle(f: FightState, toward: Vec3): Vec3 {
   return add(f.boss.pos, norm(sub(toward, f.boss.pos)), BOSS.radius * 0.7);
 }
 
-function startAction(f: FightState, armIndex: number, events: FightEvent[]): void {
+function startAction(f: FightState, armIndex: number, context: number[], events: FightEvent[]): void {
   const b = f.boss;
   const arm = ARMS[armIndex];
   b.arm = armIndex;
-  f.decisions.push({ time: f.time, arm: armIndex, dealt: 0, taken: 0 });
+  // The previous decision's damage-taken window closes now.
+  if (f.decisions.length) f.decisions[f.decisions.length - 1].windowEnd = f.time;
+  const cost = arm.kind === 'attack' ? ATTACKS[arm.attack].cost : 0;
+  f.decisions.push({ time: f.time, arm: armIndex, context, cost, dealt: 0, taken: 0, windowEnd: Infinity, resolved: false, reward: 0 });
   b.decision = f.decisions.length - 1;
   if (arm.kind === 'wait') {
     b.cooldown = arm.duration;
@@ -472,7 +505,13 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
 
   switch (b.phase) {
     case 'idle':
-      if (b.cooldown <= 0 && f.outcome === 'active') startAction(f, brain(f, arena, validArms(f)), events);
+      if (b.cooldown <= 0 && f.outcome === 'active') {
+        const context = contextOf(f, arena);
+        const valid = validArms(f);
+        let arm = brain(f, arena, valid, context);
+        if (!valid.includes(arm)) arm = valid[0]; // never let a brain pick an invalid arm
+        startAction(f, arm, context, events);
+      }
       break;
     case 'telegraph':
       b.timer -= dt;
@@ -749,6 +788,32 @@ function stepSkills(f: FightState, arena: Arena, input: PlayerInput, dt: number,
   f.shots = keep;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Rewards (HP-fraction): damage dealt as a share of the player's 150 HP vs damage taken as a
+// share of Skynet's 1200, minus a small energy charge. 30 and 240 are both 20% of each side.
+// ---------------------------------------------------------------------------------------------
+
+export const REWARD = { dealtScale: 30, takenScale: 240, energyWeight: 0.1, energyScale: 40 };
+
+export function rewardOf(d: Pick<Decision, 'dealt' | 'taken' | 'cost'>): number {
+  const r = d.dealt / REWARD.dealtScale - d.taken / REWARD.takenScale - (REWARD.energyWeight * d.cost) / REWARD.energyScale;
+  return clamp(r, -1, 1);
+}
+
+/**
+ * Score decisions whose window has closed and whose projectiles have all resolved.
+ * `force` scores everything (fight over).
+ */
+export function resolveDecisions(f: FightState, force = false): void {
+  const live = new Set(f.projectiles.map(p => p.decision));
+  f.decisions.forEach((d, i) => {
+    if (d.resolved) return;
+    if (!force && (d.windowEnd > f.time || live.has(i))) return;
+    d.reward = rewardOf(d);
+    d.resolved = true;
+  });
+}
+
 /** Advance the whole fight one tick. Deterministic given the same inputs, seed, and brain. */
 export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: number, brain: Brain): FightEvent[] {
   const events: FightEvent[] = [];
@@ -772,6 +837,7 @@ export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: n
   }
   stepProjectiles(f, arena, dt, events);
   f.time += dt;
+  resolveDecisions(f, f.outcome !== 'active');
   return events;
 }
 

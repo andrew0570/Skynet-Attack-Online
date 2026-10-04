@@ -6,6 +6,20 @@ import {
   BOSS,
   createFight,
   heuristicBrain,
+  computeFeatures,
+  createArmModel,
+  createPolicy,
+  FEATURE_DIM,
+  FEATURE_NAMES,
+  learnedBrain,
+  predict,
+  resolveDecisions,
+  rewardOf,
+  selectArm,
+  toSubmission,
+  trainOn,
+  updateArm,
+  validateSubmission,
   STAMINA,
   VITALS,
   stepFight,
@@ -362,6 +376,103 @@ const rush = runFight(1.2, (f, t) => ({ eyeX: 0, eyeY: 0, eyeZ: 0, lookX: 0, loo
 });
 const rushHits = rush.events.filter(e => e.type === 'bossHit').length;
 check('blade rush (2) slashes through Skynet', rushHits >= 3 && rush.f.player.pos.z < bossZ - 3, `${rushHits} hits, ended at z=${rush.f.player.pos.z.toFixed(1)} (Skynet at ${bossZ})`);
+
+// ---------- Learning brain (M4) ----------
+check('16 arms with a single 0.5 s wait', ARMS.length === 16 && ARMS.filter(a => a.kind === 'wait').length === 1 && ARMS[0].kind === 'wait' && ARMS[0].duration === 0.5);
+const openFight = createFight(arena, 1);
+const featsOpen = computeFeatures(openFight, arena);
+check('context: 20 finite, normalized features with bias 1', featsOpen.length === FEATURE_DIM && featsOpen[0] === 1 && featsOpen.every(v => Number.isFinite(v) && Math.abs(v) <= 1.5),
+  featsOpen.map(v => v.toFixed(2)).join(' '));
+const VIS = FEATURE_NAMES.indexOf('player visible');
+check('context: "player visible" sees walls', featsOpen[VIS] === 1 && computeFeatures(createFight(coverArena, 1), coverArena)[VIS] === 0);
+
+{
+  const r = mulberry32(11);
+  const d = FEATURE_DIM;
+  const m = createArmModel();
+  for (let i = 0; i < 50; i++) updateArm(m, Array.from({ length: d }, () => r() * 2 - 1), r());
+  let maxErr = 0;
+  for (let i = 0; i < d; i++) for (let j = 0; j < d; j++) {
+    let s = 0;
+    for (let k = 0; k < d; k++) s += m.A[i * d + k] * m.Ainv[k * d + j];
+    maxErr = Math.max(maxErr, Math.abs(s - (i === j ? 1 : 0)));
+  }
+  check('LinUCB keeps an exact inverse (A·A⁻¹ = I)', maxErr < 1e-9, `max error ${maxErr.toExponential(1)}`);
+}
+
+check('reward: HP-fraction formula', Math.abs(rewardOf({ dealt: 24, taken: 0, cost: 22 }) - (24 / 30 - 0.1 * 22 / 40)) < 1e-12
+  && Math.abs(rewardOf({ dealt: 0, taken: 100, cost: 0 }) + 100 / 240) < 1e-12 && rewardOf({ dealt: 0, taken: 300, cost: 40 }) === -1);
+
+{
+  const f = createFight(coverArena, 7);
+  let sawPending = false;
+  for (let i = 0; i < 60 * 9; i++) {
+    stepFight(f, coverArena, NO_INPUT, SIM_DT, armIs('mortar'));
+    const d0 = f.decisions[0];
+    if (d0 && d0.windowEnd <= f.time && !d0.resolved && f.projectiles.some(p => p.decision === 0)) sawPending = true;
+  }
+  check('rewards wait for in-flight shells before scoring', sawPending && f.decisions[0].resolved && f.decisions[0].dealt > 0, `decision 0: dealt ${f.decisions[0].dealt.toFixed(1)}, reward ${f.decisions[0].reward.toFixed(2)}`);
+}
+
+{
+  // Synthetic bandit: arm 1 pays when feature 3 is on, arm 4 when it's off.
+  const pol = createPolicy();
+  const r = mulberry32(3);
+  let correct = 0;
+  for (let t = 0; t < 1500; t++) {
+    const k = r() < 0.5 ? 1 : 0;
+    const x = new Array(FEATURE_DIM).fill(0);
+    x[0] = 1;
+    x[3] = k;
+    const a = selectArm(pol, x, [1, 4]);
+    const reward = (a === 1 ? (k ? 0.6 : -0.4) : k ? -0.3 : 0.5) + (r() - 0.5) * 0.2;
+    updateArm(pol.arms[a], x, reward);
+    if (t >= 1300 && a === (k ? 1 : 4)) correct++;
+  }
+  check('LinUCB learns which arm suits which context', correct / 200 > 0.9, `${((correct / 200) * 100).toFixed(0)}% optimal in the last 200 rounds`);
+}
+
+{
+  const f = createFight(arena, 3);
+  for (let i = 0; i < 60 * 30; i++) stepFight(f, arena, NO_INPUT, SIM_DT, heuristicBrain);
+  resolveDecisions(f, true);
+  const good = toSubmission(f, 0, 'abandoned');
+  check('valid fight passes validation', validateSubmission(good) === null, `${good.arms.length} decisions`);
+  check('tampered reward rejected', validateSubmission({ ...good, rewards: good.rewards.map((v, i) => (i === 0 ? 2 : v)) }) === 'reward out of range');
+  check('unknown arm rejected', validateSubmission({ ...good, arms: good.arms.map((v, i) => (i === 0 ? 99 : v)) }) === 'unknown arm');
+  check('too many decisions for the fight length rejected', validateSubmission({ ...good, duration: 5 }) !== null);
+  check('out-of-range feature rejected', validateSubmission({ ...good, contexts: good.contexts.map((v, i) => (i === 1 ? 9 : v)) }) === 'feature out of range');
+}
+
+{
+  // End-to-end: a fresh Skynet trains (validate → train, like the server) against a player who
+  // hides behind a wall. Bolts/orbs hit the wall; mortars arc over it and dives land behind it.
+  // It should learn to attack over the wall.
+  const pol = createPolicy();
+  const isMortar = (a: number) => ARMS[a].kind === 'attack' && ['mortar', 'dive'].includes((ARMS[a] as { attack: string }).attack);
+  const isBlocked = (a: number) => ARMS[a].kind === 'attack' && ['volley', 'spread', 'homing'].includes((ARMS[a] as { attack: string }).attack);
+  const usage: number[] = [];
+  for (let fight = 0; fight < 15; fight++) {
+    const f = createFight(coverArena, 100 + fight);
+    f.health = 1e9;
+    const brain = learnedBrain(pol);
+    for (let i = 0; i < 60 * 40; i++) stepFight(f, coverArena, NO_INPUT, SIM_DT, brain);
+    resolveDecisions(f, true);
+    const sub = toSubmission(f, pol.version, 'abandoned');
+    if (validateSubmission(sub) === null) trainOn(pol, sub);
+    const attacks = sub.arms.filter(a => ARMS[a].kind === 'attack');
+    usage.push(attacks.filter(isMortar).length / Math.max(1, attacks.length));
+  }
+  const hidden = computeFeatures(createFight(coverArena, 1), coverArena);
+  const attackArms = ARMS.map((_, i) => i).filter(i => ARMS[i].kind === 'attack');
+  const best = attackArms.reduce((a, b) => (predict(pol.arms[b], hidden) > predict(pol.arms[a], hidden) ? b : a));
+  const early = (usage[0] + usage[1] + usage[2]) / 3;
+  const late = (usage[12] + usage[13] + usage[14]) / 3;
+  const bestBlocked = Math.max(...attackArms.filter(isBlocked).map(a => predict(pol.arms[a], hidden)));
+  const label = (a: number) => (ARMS[a].kind === 'attack' ? `${(ARMS[a] as { attack: string }).attack}/${(ARMS[a] as { aim: string }).aim}` : 'wait');
+  check('trained Skynet learns to attack over walls vs a hidden player', isMortar(best) && late > early && predict(pol.arms[best], hidden) > bestBlocked + 0.3 && pol.version === 15,
+    `best ${label(best)} (predicted ${predict(pol.arms[best], hidden).toFixed(2)}) vs best bolt attack ${bestBlocked.toFixed(2)}; over-wall share of attacks ${(early * 100).toFixed(0)}% → ${(late * 100).toFixed(0)}%`);
+}
 
 const runA = runFight(20, (_f, t) => ({ moveX: Math.sin(t / 40), moveZ: -1, dash: t % 50 === 0, aimZ: -1 }));
 const runB = runFight(20, (_f, t) => ({ moveX: Math.sin(t / 40), moveZ: -1, dash: t % 50 === 0, aimZ: -1 }));
