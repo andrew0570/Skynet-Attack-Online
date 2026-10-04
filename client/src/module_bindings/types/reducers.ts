@@ -7,6 +7,8 @@ import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
 import SetConsentReducer from "../set_consent_reducer";
+import SubmitFightReducer from "../submit_fight_reducer";
 
 export type SetConsentParams = __Infer<typeof SetConsentReducer>;
+export type SubmitFightParams = __Infer<typeof SubmitFightReducer>;
 

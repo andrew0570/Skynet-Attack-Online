@@ -10,10 +10,59 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const Fight = __t.object("Fight", {
+  id: __t.u64(),
+  player: __t.identity(),
+  at: __t.timestamp(),
+  outcome: __t.string(),
+  duration: __t.f64(),
+  decisions: __t.u32(),
+  dealt: __t.f64(),
+  taken: __t.f64(),
+  meanReward: __t.f64(),
+  policyVersion: __t.u32(),
+  accepted: __t.bool(),
+  reason: __t.string(),
+});
+export type Fight = __Infer<typeof Fight>;
+
 export const Player = __t.object("Player", {
   identity: __t.identity(),
   consented: __t.bool(),
   joinedAt: __t.timestamp(),
+  lastSubmitMicros: __t.u64(),
 });
 export type Player = __Infer<typeof Player>;
+
+export const PolicyArm = __t.object("PolicyArm", {
+  arm: __t.u32(),
+  a: __t.array(__t.f64()),
+  b: __t.array(__t.f64()),
+  ainv: __t.array(__t.f64()),
+  theta: __t.array(__t.f64()),
+  n: __t.u32(),
+  rewardSum: __t.f64(),
+});
+export type PolicyArm = __Infer<typeof PolicyArm>;
+
+export const PolicyMeta = __t.object("PolicyMeta", {
+  id: __t.u32(),
+  version: __t.u32(),
+  fights: __t.u32(),
+  decisions: __t.u32(),
+  rejected: __t.u32(),
+  wins: __t.u32(),
+  losses: __t.u32(),
+});
+export type PolicyMeta = __Infer<typeof PolicyMeta>;
+
+export const PolicySnapshot = __t.object("PolicySnapshot", {
+  version: __t.u32(),
+  at: __t.timestamp(),
+  fights: __t.u32(),
+  theta: __t.array(__t.f64()),
+  n: __t.array(__t.u32()),
+  rewardSum: __t.array(__t.f64()),
+});
+export type PolicySnapshot = __Infer<typeof PolicySnapshot>;
 

@@ -11,7 +11,7 @@
     "dev": "npm run dev -w @sao/client",
     "build": "npm run build -w @sao/client",
     "db:start": "spacetime start",
-    "db:publish": "spacetime publish --server local -y",
+    "db:publish": "spacetime publish --server local --delete-data=on-conflict -y",
     "db:generate": "spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path server",
     "db:logs": "spacetime logs --server local skynet-attack-online",
     "sim:smoke": "tsx tools/sim-smoke.ts",

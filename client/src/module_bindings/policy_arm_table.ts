@@ -11,8 +11,11 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  identity: __t.identity().primaryKey(),
-  consented: __t.bool(),
-  joinedAt: __t.timestamp().name("joined_at"),
-  lastSubmitMicros: __t.u64().name("last_submit_micros"),
+  arm: __t.u32().primaryKey(),
+  a: __t.array(__t.f64()),
+  b: __t.array(__t.f64()),
+  ainv: __t.array(__t.f64()),
+  theta: __t.array(__t.f64()),
+  n: __t.u32(),
+  rewardSum: __t.f64().name("reward_sum"),
 });

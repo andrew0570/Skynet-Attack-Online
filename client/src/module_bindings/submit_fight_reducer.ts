@@ -10,9 +10,13 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  identity: __t.identity().primaryKey(),
-  consented: __t.bool(),
-  joinedAt: __t.timestamp().name("joined_at"),
-  lastSubmitMicros: __t.u64().name("last_submit_micros"),
-});
+export default {
+  policyVersion: __t.u32(),
+  outcome: __t.string(),
+  duration: __t.f64(),
+  arms: __t.array(__t.u32()),
+  contexts: __t.array(__t.f64()),
+  rewards: __t.array(__t.f64()),
+  dealt: __t.f64(),
+  taken: __t.f64(),
+};

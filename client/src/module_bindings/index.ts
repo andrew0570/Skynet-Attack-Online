@@ -35,16 +35,32 @@ import {
 
 // Import all reducer arg schemas
 import SetConsentReducer from "./set_consent_reducer";
+import SubmitFightReducer from "./submit_fight_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import FightRow from "./fight_table";
 import PlayerRow from "./player_table";
+import PolicyArmRow from "./policy_arm_table";
+import PolicyMetaRow from "./policy_meta_table";
+import PolicySnapshotRow from "./policy_snapshot_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  fight: __table({
+    name: 'fight',
+    indexes: [
+      { accessor: 'id', name: 'fight_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'fight_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, FightRow),
   player: __table({
     name: 'player',
     indexes: [
@@ -56,11 +72,45 @@ const tablesSchema = __schema({
       { name: 'player_identity_key', constraint: 'unique', columns: ['identity'] },
     ],
   }, PlayerRow),
+  policyArm: __table({
+    name: 'policy_arm',
+    indexes: [
+      { accessor: 'arm', name: 'policy_arm_arm_idx_btree', algorithm: 'btree', columns: [
+        'arm',
+      ] },
+    ],
+    constraints: [
+      { name: 'policy_arm_arm_key', constraint: 'unique', columns: ['arm'] },
+    ],
+  }, PolicyArmRow),
+  policyMeta: __table({
+    name: 'policy_meta',
+    indexes: [
+      { accessor: 'id', name: 'policy_meta_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'policy_meta_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, PolicyMetaRow),
+  policySnapshot: __table({
+    name: 'policy_snapshot',
+    indexes: [
+      { accessor: 'version', name: 'policy_snapshot_version_idx_btree', algorithm: 'btree', columns: [
+        'version',
+      ] },
+    ],
+    constraints: [
+      { name: 'policy_snapshot_version_key', constraint: 'unique', columns: ['version'] },
+    ],
+  }, PolicySnapshotRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("set_consent", SetConsentReducer),
+  __reducerSchema("submit_fight", SubmitFightReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
