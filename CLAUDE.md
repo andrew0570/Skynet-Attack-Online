@@ -135,6 +135,7 @@ Run from the repo root after `. .\env.ps1`:
 | `npm run dev` | Client dev server → http://localhost:5173 (hot reload is OFF — refresh manually; see `client/vite.config.ts`) |
 | `npm run build` | Type-check (client + sim) + production build of the client |
 | `npm run sim:smoke` | Headless movement checks for `sim/` (run after touching `sim/`) |
+| `npm run test:browser` | Drives the real client in headless Edge (needs `npm run dev`). `SAO_SLOW_CLOCK=1` simulates a high-refresh display; `SAO_URL` overrides the page |
 | `npx tsc --noEmit -p server` | Type-check the server module (`spacetime build` skips it) |
 | `spacetime sql --server local skynet-attack-online "SELECT * FROM player"` | Inspect data |
 

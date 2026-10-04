@@ -44,6 +44,14 @@ export class Input {
     return this.pressed.has(code);
   }
 
+  /**
+   * Read-and-clear a press. Use for keys handled outside the fixed sim tick (e.g. restart):
+   * on high-refresh displays many frames run no tick, so an unconsumed press would repeat.
+   */
+  consumePressed(code: string): boolean {
+    return this.pressed.delete(code);
+  }
+
   /** Call after a sim tick has read this frame's presses. */
   clearPressed(): void {
     this.pressed.clear();

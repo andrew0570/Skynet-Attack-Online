@@ -132,6 +132,13 @@ function readInput(): PlayerInput {
   };
 }
 
+// Debug handle for automated browser tests (tools/browser-test.ts).
+(window as unknown as { __sao: unknown }).__sao = {
+  get fight() {
+    return fight;
+  },
+};
+
 const BOSS_STATE_LABEL: Record<string, string> = { telegraph: 'CHARGING', recover: '', return: 'RETURNING' };
 
 let accumulator = 0;
@@ -144,12 +151,11 @@ renderer.setAnimationLoop(() => {
   last = now;
   elapsed += frameDt;
 
-  if (input.wasPressed('KeyR')) {
+  if (input.consumePressed('KeyR')) {
     fight = newFight();
     fx.reset();
     Object.assign(prevPos, fight.player.pos);
     Object.assign(prevBoss, fight.boss.pos);
-    accumulator = 0;
   }
 
   const { dx, dy } = input.takeMouseDelta();
@@ -212,7 +218,7 @@ renderer.setAnimationLoop(() => {
   ui.bossEnergy.style.width = `${(b.energy / BOSS.maxEnergy) * 100}%`;
   const arm = b.arm >= 0 ? ARMS[b.arm] : null;
   const stunned = b.phase === 'recover' && arm?.kind === 'attack' && arm.attack === 'dive';
-  ui.bossState.textContent = stunned ? 'STUNNED — STRIKE NOW' : (BOSS_STATE_LABEL[b.phase] ?? '');
+  ui.bossState.textContent = stunned ? 'STUNNED â€” STRIKE NOW' : (BOSS_STATE_LABEL[b.phase] ?? '');
   ui.playerHp.style.width = `${(fight.playerHp / PLAYER_HP) * 100}%`;
   hurtFlash = Math.max(0, hurtFlash - frameDt * 2.5);
   ui.vignette.style.opacity = String(hurtFlash);
