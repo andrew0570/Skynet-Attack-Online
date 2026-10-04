@@ -58,7 +58,9 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.3;
-document.body.appendChild(renderer.domElement);
+// First in the page so every HUD overlay stacks above it (a CSS filter on the canvas, used by
+// the defeat screen, would otherwise lift it over overlays that come before it).
+document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
 createWorld(scene, renderer);
@@ -71,6 +73,8 @@ const fx = createCombatFx(scene);
 
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 700);
 const thirdPerson = new ThirdPersonCamera(camera);
+/** Camera framing to restore after the defeat cinematic. */
+const cameraRest = { distance: thirdPerson.distance, pitch: thirdPerson.pitch };
 if (params.has('front')) thirdPerson.yaw = Math.PI;
 if (params.has('yaw')) thirdPerson.yaw = Number(params.get('yaw'));
 if (params.has('pitch')) thirdPerson.pitch = Number(params.get('pitch'));
@@ -119,6 +123,7 @@ const ui = {
   skillCd: [0, 1, 2].map(i => el(`skill-cd-${i}`)),
   skillTime: [0, 1, 2].map(i => el(`skill-time-${i}`)),
   vignette: el('vignette'),
+  static: el('static'),
   result: el('result'),
   resultTitle: el('result-title'),
   callout: el('callout'),
@@ -316,6 +321,8 @@ let fightPolicy: Policy | null = null;
 let fightStarted = false;
 let submitted = false;
 let fightSeed = 1;
+/** When the player was defeated (elapsed s), or -1. Drives the defeat cinematic. */
+let lostAt = -1;
 
 function newFight() {
   const f = createFight(arena, fightSeed++);
@@ -323,6 +330,9 @@ function newFight() {
   fightStarted = false;
   submitted = false;
   explained = 0;
+  // Coming back from the defeat cinematic: restore the normal camera framing.
+  if (lostAt >= 0) Object.assign(thirdPerson, cameraRest);
+  lostAt = -1;
   lastWhy = '';
   calloutTimer = 0;
   ui.readMove.textContent = '—';
@@ -457,7 +467,20 @@ renderer.setAnimationLoop(() => {
 
   hero.group.position.set(renderPos.x, renderPos.y, renderPos.z);
   hero.group.rotation.y = player.yaw;
-  hero.update(params.has('glide') ? { ...player, gliding: true } : player, frameDt, elapsed);
+  // Defeat: the hero collapses, the camera slowly circles in, the picture drains to static.
+  if (fight.outcome === 'lost' && lostAt < 0) lostAt = elapsed;
+  const deathT = lostAt >= 0 ? elapsed - lostAt : -1;
+  hero.update(params.has('glide') ? { ...player, gliding: true } : player, frameDt, elapsed, deathT);
+  if (deathT >= 0) {
+    const ease = 1 - Math.exp(-frameDt * 1.2);
+    thirdPerson.yaw += frameDt * 0.3;
+    thirdPerson.distance += (5.5 - thirdPerson.distance) * ease;
+    thirdPerson.pitch += (0.6 - thirdPerson.pitch) * ease;
+  }
+  const drain = deathT >= 0 ? Math.min(1, deathT / 1.8) : 0;
+  const filter = drain > 0 ? `saturate(${(1 - 0.85 * drain).toFixed(2)}) brightness(${(1 - 0.3 * drain).toFixed(2)}) contrast(${(1 + 0.15 * drain).toFixed(2)})` : '';
+  if (renderer.domElement.style.filter !== filter) renderer.domElement.style.filter = filter;
+  ui.static.style.opacity = drain > 0 ? String(0.75 * drain * (0.85 + 0.15 * Math.sin(elapsed * 37))) : '0';
   // The surface under Skynet (pillar top, wall, or terrain): where it crashes when destroyed.
   const bossDrop = raycast(arena, bossPos, { x: bossPos.x, y: bossPos.y - 120, z: bossPos.z }, renderTime);
   const bossFloor = Math.max(heightAt(bossPos.x, bossPos.z), bossPos.y - bossDrop * 120);
@@ -517,9 +540,10 @@ renderer.setAnimationLoop(() => {
   camera.getWorldDirection(lookDir);
   ui.reticle.classList.toggle('on-target', aimRay(fight, arena, camera.position, lookDir).hitBoss);
   hurtFlash = Math.max(0, hurtFlash - frameDt * 2.5);
-  ui.vignette.style.opacity = String(hurtFlash);
+  ui.vignette.style.opacity = String(Math.max(hurtFlash, 0.85 * drain));
   // On a win, hold the result screen until Skynet's death sequence has played out.
-  const showResult = fight.outcome === 'lost' || (fight.outcome === 'won' && skynet.deathDone());
+  // Both endings hold the result screen until their animation has played out.
+  const showResult = (fight.outcome === 'lost' && deathT > 2.3) || (fight.outcome === 'won' && skynet.deathDone());
   ui.result.className = showResult ? fight.outcome : 'hidden';
   ui.resultTitle.textContent = fight.outcome === 'won' ? 'SKYNET DEFEATED' : fight.outcome === 'lost' ? 'TERMINATED' : '';
   const who = playerName ? (fight.outcome === 'won' ? `Well fought, ${playerName}. ` : `${playerName} has fallen. `) : '';

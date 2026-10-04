@@ -89,7 +89,23 @@
       #result { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(10,4,3,0.6); transition: opacity 0.4s; pointer-events: none; }
       #result h1 { margin: 0; font-size: 3rem; letter-spacing: 0.2em; }
       #result.won h1 { color: #00e5ff; text-shadow: 0 0 20px #00e5ff; }
-      #result.lost h1 { color: #ff3b1f; text-shadow: 0 0 20px #ff2200; }
+      #result.lost h1 { color: #ff3b1f; text-shadow: 0 0 20px #ff2200; animation: glitch 2.4s steps(1) infinite; }
+      /* Signal-lost glitch: brief sideways tears with split red/cyan ghosts. */
+      @keyframes glitch {
+        0%, 100% { transform: none; text-shadow: 0 0 20px #ff2200; }
+        3% { transform: translateX(-6px) skewX(-8deg); text-shadow: 5px 0 #00e5ff, -5px 0 #ff2200; }
+        6% { transform: translateX(4px); text-shadow: -3px 0 #00e5ff, 3px 0 #ff2200; }
+        9% { transform: none; text-shadow: 0 0 20px #ff2200; }
+        52% { transform: translateX(3px) skewX(6deg); text-shadow: -4px 0 #00e5ff, 4px 0 #ff2200; }
+        55% { transform: none; text-shadow: 0 0 20px #ff2200; }
+      }
+      /* Defeat static: scanlines plus a rolling noise band over the desaturated view. */
+      #static { position: fixed; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen;
+        background: repeating-linear-gradient(0deg, rgba(255,80,60,0.09) 0 1px, transparent 1px 3px),
+                    linear-gradient(180deg, transparent 0%, rgba(255,90,70,0.12) 48%, transparent 56%);
+        background-size: 100% 100%, 100% 260%; animation: roll 1.6s linear infinite; }
+      @keyframes roll { from { background-position: 0 0, 0 0%; } to { background-position: 0 0, 0 100%; } }
+      @media (prefers-reduced-motion: reduce) { #result.lost h1, #static { animation: none; } }
 
       /* Counter-move callout under Skynet's bars */
       #callout { position: fixed; top: 118px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; transition: opacity 0.35s; width: min(640px, 90vw); }
@@ -172,6 +188,7 @@
       </div>
     </div>
     <div id="vignette"></div>
+    <div id="static"></div>
     <div id="result" class="hidden"><h1 id="result-title"></h1><p id="result-note"></p><p>Press R to fight again</p></div>
     <div id="start">
       <form class="card" id="start-form" novalidate>

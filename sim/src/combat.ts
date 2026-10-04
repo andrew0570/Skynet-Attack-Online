@@ -1,7 +1,7 @@
 import { raycast, type Arena } from './arena';
 import { ARENA_RADIUS, HURT_INVULN, PLAYER, SKILLS, SWORD, VITALS } from './config';
 import { clamp, vec3, type Vec3 } from './math';
-import { createPlayer, startRush, stepPlayer, type PlayerInput, type PlayerState } from './player';
+import { createPlayer, NO_INPUT, startRush, stepPlayer, type PlayerInput, type PlayerState } from './player';
 import { mulberry32, type Rng } from './rng';
 import { heightAt } from './terrain';
 
@@ -1264,7 +1264,8 @@ export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: n
   const wasDashing = p.dashTimer > 0;
   const prevSwing = p.swingTimer;
   const prevCd = f.skillCd.slice();
-  if (f.outcome === 'active' || f.outcome === 'won') stepPlayer(p, input, dt, arena, f.time);
+  // After a defeat the body still obeys physics (falls, slides from knockback) but takes no input.
+  stepPlayer(p, f.outcome === 'lost' ? NO_INPUT : input, dt, arena, f.time);
   // Remember which side the player dodges to, relative to Skynet's line of fire.
   if (!wasDashing && p.dashTimer > 0) {
     const los = sub(p.pos, f.boss.pos);

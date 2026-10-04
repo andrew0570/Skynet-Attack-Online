@@ -251,8 +251,13 @@ export interface Hero {
   group: THREE.Group;
   /** World-space effects (Blade Rush slash crescents); add to the scene, not the hero. */
   worldFx: THREE.Group;
-  update(p: PlayerState, dt: number, time: number): void;
+  /** `deathT`: seconds since the player was defeated (-1 while alive) — plays the collapse. */
+  update(p: PlayerState, dt: number, time: number, deathT?: number): void;
 }
+
+/** Defeat collapse timeline (s): recoil, buckle to the knees, topple face-down. */
+const COLLAPSE = { recoil: 0.35, kneel: 1.0, fall: 1.5 };
+const ease = (k: number) => k * k * (3 - 2 * k);
 
 export function createHero(): Hero {
   const left = createArm(1);
@@ -413,7 +418,7 @@ export function createHero(): Hero {
   return {
     group,
     worldFx: flurry.group,
-    update(p, dt, time) {
+    update(p, dt, time, deathT) {
       const hs = Math.hypot(p.vel.x, p.vel.z);
       phase += (dt * hs * Math.PI * 2) / (2.2 + hs * 0.15);
       if (p.airJumpCount !== prevAirJumps) flipT = FLIP_TIME;
@@ -527,6 +532,41 @@ export function createHero(): Hero {
       // Armor seams flare while dash invulnerability is active.
       const boost = p.invuln > 0 ? 2.2 : 1;
       for (const [mat, base] of GLOWS) mat.color.copy(base).multiplyScalar(boost);
+
+      const blade = sword.children[3];
+      const sheath = sword.children[4];
+      blade.scale.y = sheath.scale.y = 1;
+      head.rotation.x = 0;
+      if (deathT === undefined || deathT < 0) return;
+
+      // ---- Defeat: recoil → knees → face-down, while the suit's power dies ----
+      const d = deathT;
+      const recoil = Math.sin(Math.min(1, d / COLLAPSE.recoil) * Math.PI);
+      const kneel = ease(Math.min(1, Math.max(0, (d - COLLAPSE.recoil * 0.6) / (COLLAPSE.kneel - COLLAPSE.recoil * 0.6))));
+      const fall = Math.min(1, Math.max(0, (d - COLLAPSE.kneel) / (COLLAPSE.fall - COLLAPSE.kneel)));
+      const drop = fall * fall; // accelerates like a real fall
+      body.position.y = 0.95 - 0.45 * kneel - 0.28 * drop;
+      body.rotation.x = -0.35 * recoil + 1.5 * drop;
+      torso.rotation.x = -0.3 * recoil + 0.4 * kneel * (1 - drop);
+      torso.rotation.y = 0;
+      head.rotation.x = 0.55 * kneel;
+      for (let i = 0; i < 2; i++) {
+        legs[i].hip.rotation.x = (i ? 0.08 : -0.08) * kneel * (1 - drop);
+        legs[i].knee.rotation.x = 1.6 * kneel * (1 - drop) + 0.15 * drop;
+        // Arms fling out on the hit, then hang limp.
+        arms[i].shoulder.rotation.x = 0.25 * kneel - 0.6 * recoil - 1.2 * drop;
+        arms[i].shoulder.rotation.z = (i ? -1 : 1) * (0.9 * recoil + 0.1);
+        arms[i].elbow.rotation.x = -0.2;
+      }
+      sword.rotation.set(SWORD_READY.x + 0.5 * kneel, SWORD_READY.y, 0);
+      // The laser blade retracts as the power fails.
+      const bladeLen = Math.max(0.001, 1 - Math.max(0, d - 0.3) / 0.35);
+      blade.scale.y = sheath.scale.y = bladeLen;
+      // Glow sputters out: seams, visor, core, wings.
+      const power = Math.max(0, 1 - d / 1.4) * (Math.sin(time * 41) * Math.sin(time * 23) > -0.2 ? 1 : 0.15);
+      for (const [mat, base] of GLOWS) mat.color.copy(base).multiplyScalar(0.04 + power);
+      WING_GLOW.color.copy(CYAN).multiplyScalar(0.02 + WING_GLOW_FOLDED * power);
+      flameGroup.visible = false;
     },
   };
 }
