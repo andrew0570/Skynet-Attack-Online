@@ -222,7 +222,7 @@ renderer.setAnimationLoop(() => {
   ui.bossEnergy.style.width = `${(b.energy / BOSS.maxEnergy) * 100}%`;
   const arm = b.arm >= 0 ? ARMS[b.arm] : null;
   const stunned = b.phase === 'recover' && arm?.kind === 'attack' && arm.attack === 'dive';
-  ui.bossState.textContent = stunned ? 'STUNNED â€” STRIKE NOW' : (BOSS_STATE_LABEL[b.phase] ?? '');
+  ui.bossState.textContent = stunned ? 'STUNNED — STRIKE NOW' : (BOSS_STATE_LABEL[b.phase] ?? '');
   ui.armor.style.width = `${(fight.armor / VITALS.armor) * 100}%`;
   ui.armorText.textContent = `${Math.ceil(fight.armor)}`;
   ui.health.style.width = `${(fight.health / VITALS.health) * 100}%`;

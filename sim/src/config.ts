@@ -70,8 +70,8 @@ export const STAMINA = {
   regenDelay: 0.5,
   sprintDrain: 20,
   jumpCost: 15,
-  airJumpCost: 15,
-  dashCost: 22,
+  airJumpCost: 20,
+  dashCost: 25,
 };
 
 export const PLAYER = {

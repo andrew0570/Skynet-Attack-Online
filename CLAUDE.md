@@ -145,3 +145,6 @@ Run from the repo root after `. .\env.ps1`:
 - Hackathon pace: favor working demos over polish; hardcode/mock anything not on the demo path.
 - Keep each milestone demoable before starting the next; commit at every milestone.
 - Keep secrets in `.env` (gitignored); never commit API keys or tokens.
+- Never rewrite files with Windows PowerShell 5.1 `Get-Content`/`Set-Content`/`WriteAllText`
+  round-trips: it reads UTF-8 as ANSI and corrupts non-ASCII characters (em dashes, ×, →).
+  Use the Edit tool or bash `sed`.
