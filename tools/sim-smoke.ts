@@ -150,6 +150,9 @@ check('no stamina regen in the air: jumps end when the bar does (6 × 16)', skyf
   `${skyfall.p.airJumpCount} air jumps over 7 s airborne, stamina ${skyfall.p.stamina.toFixed(1)}`);
 const glideRegen = sim(60 * 4, () => ({ glide: true }), { setup: p => { p.pos.y += 200; p.onGround = false; p.stamina = 0; } });
 check('no stamina regen while gliding', glideRegen.p.stamina === 0 && !glideRegen.p.onGround);
+const tallVines: Arena = { ...EMPTY_ARENA, statics: [makeBox('wall', 0, 20, 5, 0.6, 0, -5, heightAt(0, 20) + 60, true)] };
+const climbRegen = sim(60 * 3, () => ({ moveZ: -1 }), { arena: tallVines, start: { x: 0, z: 22 }, setup: p => (p.stamina = 0) });
+check('stamina regenerates while climbing vines', climbRegen.p.climbing && climbRegen.p.stamina > 50, `${climbRegen.p.stamina.toFixed(1)} after 3 s climbing`);
 const landRegen = sim(60 * 4, () => ({}), { setup: p => { p.pos.y += 3; p.onGround = false; p.stamina = 0; } });
 check('stamina regenerates after landing', landRegen.p.onGround && landRegen.p.stamina > 80, `${landRegen.p.stamina.toFixed(1)}`);
 

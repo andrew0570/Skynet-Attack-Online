@@ -60,7 +60,8 @@ export const HURT_INVULN = 0.4;
 
 /**
  * Stamina gates sprinting, jumping, and dashing (no fixed air-jump/air-dash charges).
- * It only regenerates on the ground, so one airtime is limited to one bar of stamina.
+ * It only regenerates on the ground or while climbing vines, so one airtime is limited to one
+ * bar of stamina.
  */
 export const STAMINA = {
   max: 100,
