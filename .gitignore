@@ -30,5 +30,8 @@ desktop.ini
 .tools/*
 !.tools/bin/
 
+# Local brain backups and training logs (can be large)
+backups/
+
 # Claude Code local settings
 .claude/settings.local.json

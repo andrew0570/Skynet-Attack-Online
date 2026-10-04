@@ -1,0 +1,320 @@
+<title>Skynet Bot Training</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a single readable column like a mission debrief — verdict, outcome chart, two trend
+     charts side by side, then the per-block log and the backup manifest. */
+  :root {
+    color-scheme: light;
+    --bg: #f5f6f8;
+    --surface: #fbfbfc;
+    --ink: #11141b;
+    --ink-2: #4a5160;
+    --muted: #7c8392;
+    --rule: #dfe2e8;
+    --axis: #c1c6d0;
+    --skynet: #e34948;
+    --bot: #2a78d6;
+    --timeout: #a7adb8;
+    --accent: #0f8fb0;
+    --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+    --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+    --font-data: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0f1116;
+      --surface: #15171d;
+      --ink: #eef1f6;
+      --ink-2: #b4bac6;
+      --muted: #868d9a;
+      --rule: #262a33;
+      --axis: #3a3f4a;
+      --skynet: #e66767;
+      --bot: #3987e5;
+      --timeout: #5d636e;
+      --accent: #38c5e6;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f1116;
+    --surface: #15171d;
+    --ink: #eef1f6;
+    --ink-2: #b4bac6;
+    --muted: #868d9a;
+    --rule: #262a33;
+    --axis: #3a3f4a;
+    --skynet: #e66767;
+    --bot: #3987e5;
+    --timeout: #5d636e;
+    --accent: #38c5e6;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--font-body); padding: 32px 20px 56px; }
+  main { max-width: 1040px; margin: 0 auto; display: grid; gap: 36px; }
+  h1, h2 { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.02em; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(1.9rem, 4vw, 2.6rem); line-height: 1.1; }
+  h2 { font-size: 1.15rem; }
+  .eyebrow { font: 600 0.72rem/1 var(--font-display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--skynet); }
+  .lede { color: var(--ink-2); max-width: 68ch; margin: 10px 0 0; }
+  header { display: grid; gap: 8px; }
+
+  .figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+  .figure { background: var(--surface); padding: 16px 18px; display: grid; gap: 4px; }
+  .figure .label { font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .figure .value { font: 600 1.6rem/1.15 var(--font-display); }
+  .figure .delta { font: 500 0.82rem/1.3 var(--font-data); color: var(--ink-2); }
+
+  section { display: grid; gap: 14px; }
+  .section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+  .note { color: var(--muted); font-size: 0.88rem; margin: 0; max-width: 68ch; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.86rem; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 16px 8px; position: relative; }
+  .chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart text { font-family: var(--font-data); font-size: 11px; fill: var(--muted); }
+  .chart .grid { stroke: var(--rule); stroke-width: 1; }
+  .chart .base { stroke: var(--axis); stroke-width: 1; }
+  .chart .hit { fill: transparent; cursor: crosshair; }
+  .chart .hit:hover + .hover-ring, .chart .col:hover { opacity: 1; }
+  .trends { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font: 500 0.8rem/1.45 var(--font-data); padding: 8px 10px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); opacity: 0; transition: opacity 0.1s; z-index: 2; }
+  .tip.on { opacity: 1; }
+  .tip b { font-weight: 500; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 640px; }
+  th, td { padding: 8px 14px; text-align: right; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { font: 600 0.72rem/1.2 var(--font-display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); background: var(--surface); position: sticky; top: 0; }
+  tbody td { font-family: var(--font-data); font-size: 0.84rem; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .pill { display: inline-block; min-width: 3.4em; padding: 1px 7px; border-radius: 999px; text-align: center; }
+  .pill.sky { background: color-mix(in srgb, var(--skynet) 16%, transparent); color: var(--ink); }
+  .pill.zero { color: var(--muted); }
+
+  .backups { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+  .backups li { background: var(--surface); padding: 10px 14px; display: grid; grid-template-columns: 6.5rem 5rem 1fr; gap: 12px; align-items: baseline; font-family: var(--font-data); font-size: 0.84rem; }
+  .backups .file { color: var(--ink-2); overflow-wrap: anywhere; }
+  .backups .run { color: var(--ink); }
+  @media (max-width: 520px) { .backups li { grid-template-columns: 1fr 1fr; } .backups .file { grid-column: 1 / -1; } }
+
+  footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); padding-top: 14px; max-width: 72ch; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">Neural core training log</div>
+    <h1 id="headline">Skynet Bot Training</h1>
+    <p class="lede" id="lede"></p>
+  </header>
+
+  <div class="figures" id="figures"></div>
+
+  <section>
+    <div class="section-head">
+      <h2>Fight outcomes per 10 runs</h2>
+      <div class="legend">
+        <span><i style="background: var(--skynet)"></i>Skynet wins</span>
+        <span><i style="background: var(--bot)"></i>Bot wins</span>
+        <span><i style="background: var(--timeout)"></i>Timeouts (120 s)</span>
+      </div>
+    </div>
+    <div class="panel"><svg class="chart" id="outcomes" role="img" aria-label="Stacked bars of Skynet wins, bot wins, and timeouts per 10-run block"></svg><div class="tip" id="tip-outcomes"></div></div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Is Skynet getting better?</h2></div>
+    <div class="trends">
+      <div class="panel">
+        <p class="note" style="margin-bottom:6px">Damage Skynet dealt per fight (block average)</p>
+        <svg class="chart" id="damage" role="img" aria-label="Average damage Skynet dealt per fight, per 10-run block"></svg><div class="tip" id="tip-damage"></div>
+      </div>
+      <div class="panel">
+        <p class="note" style="margin-bottom:6px">Average decision reward (−1 to +1)</p>
+        <svg class="chart" id="reward" role="img" aria-label="Average decision reward per 10-run block"></svg><div class="tip" id="tip-reward"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Per-block log</h2><p class="note">Bot styles rotate aggressor → kiter → hider → dodger every run.</p></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Runs</th><th>Skynet wins</th><th>Bot wins</th><th>Timeouts</th><th>Skynet dmg / fight</th><th>Skynet HP left</th><th>Avg reward</th><th>Brain</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Brain backups</h2><p class="note">Full copies of every arm's model and all snapshots, saved locally in <code>backups/</code>.</p></div>
+    <ul class="backups" id="backups"></ul>
+  </section>
+
+  <footer id="method"></footer>
+</main>
+
+<script>
+const DATA = __DATA__;
+
+const blocks = [];
+for (let i = 0; i < DATA.stats.length; i += 10) {
+  const b = DATA.stats.slice(i, i + 10);
+  const n = b.length;
+  const count = k => b.filter(s => s.outcome === k).length;
+  const avg = f => b.reduce((a, s) => a + f(s), 0) / n;
+  blocks.push({
+    from: b[0].run, to: b[n - 1].run, n,
+    skynet: count('skynet') / n, bot: count('bot') / n, timeout: count('timeout') / n,
+    dmg: avg(s => s.skynetDamage), hp: avg(s => s.skynetHpLeft), reward: avg(s => s.meanReward),
+    version: b[n - 1].policyVersion + 1,
+  });
+}
+const pct = v => `${Math.round(v * 100)}%`;
+const first = blocks.slice(0, 5), last = blocks.slice(-5);
+const mean = (arr, k) => arr.reduce((a, b) => a + b[k], 0) / arr.length;
+const totalRuns = DATA.stats.length;
+const skyWins = DATA.stats.filter(s => s.outcome === 'skynet').length;
+const rejected = DATA.stats.filter(s => !s.accepted).length;
+const v0 = DATA.stats[0].policyVersion, v1 = DATA.stats[totalRuns - 1].policyVersion + 1;
+
+document.getElementById('lede').textContent =
+  `${totalRuns} automated fights against four styles of bot player, each one validated and learned from by the shared brain in SpacetimeDB. ` +
+  `The brain went from v${v0} to v${v1}. Skynet won ${skyWins} of ${totalRuns} fights; ${rejected === 0 ? 'no fights were rejected' : rejected + ' were rejected by validation'}.`;
+
+const fig = [
+  ['Skynet win rate', `${pct(mean(last, 'skynet'))}`, `first 50 runs ${pct(mean(first, 'skynet'))}`],
+  ['Damage dealt / fight', `${Math.round(mean(last, 'dmg'))}`, `first 50 runs ${Math.round(mean(first, 'dmg'))}`],
+  ['Avg decision reward', mean(last, 'reward').toFixed(3), `first 50 runs ${mean(first, 'reward').toFixed(3)}`],
+  ['Brain version', `v${v1}`, `started at v${v0}`],
+];
+document.getElementById('figures').innerHTML = fig.map(([l, v, d]) =>
+  `<div class="figure"><span class="label">${l}${l === 'Brain version' ? '' : ' · last 50'}</span><span class="value">${v}</span><span class="delta">${d}</span></div>`).join('');
+
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function tooltip(id) {
+  const tip = document.getElementById(id);
+  return {
+    show(html, x, y) { tip.innerHTML = html; tip.style.left = x + 'px'; tip.style.top = y + 'px'; tip.classList.add('on'); },
+    hide() { tip.classList.remove('on'); },
+  };
+}
+
+// Outcomes: 100% stacked columns, Skynet wins anchored at the baseline.
+(function outcomes() {
+  const svg = document.getElementById('outcomes');
+  const W = 960, H = 280, L = 40, R = 8, T = 10, B = 34;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const iw = W - L - R, ih = H - T - B;
+  const y = v => T + ih * (1 - v);
+  for (const v of [0, 0.25, 0.5, 0.75, 1]) {
+    el('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), class: v === 0 ? 'base' : 'grid' }, svg);
+    const t = el('text', { x: L - 8, y: y(v) + 4, 'text-anchor': 'end' }, svg); t.textContent = pct(v);
+  }
+  const slot = iw / blocks.length, bw = Math.max(6, slot * 0.62);
+  const tip = tooltip('tip-outcomes');
+  blocks.forEach((b, i) => {
+    const x = L + slot * i + (slot - bw) / 2;
+    let acc = 0;
+    for (const [k, color] of [['skynet', 'var(--skynet)'], ['bot', 'var(--bot)'], ['timeout', 'var(--timeout)']]) {
+      const v = b[k];
+      if (v <= 0) continue;
+      const top = y(acc + v), bottom = y(acc);
+      // 2px surface gap between stacked segments.
+      el('rect', { x, y: top + (acc + v < 1 ? 1 : 0), width: bw, height: Math.max(0, bottom - top - (acc > 0 ? 1 : 0) - (acc + v < 1 ? 1 : 0)), rx: 2, fill: color }, svg);
+      acc += v;
+    }
+    if (i % 2 === 0 || blocks.length <= 13) {
+      const t = el('text', { x: x + bw / 2, y: H - B + 16, 'text-anchor': 'middle' }, svg); t.textContent = b.to;
+    }
+    const hit = el('rect', { x: L + slot * i, y: T, width: slot, height: ih, class: 'hit' }, svg);
+    hit.addEventListener('mousemove', () => {
+      const r = svg.getBoundingClientRect(), s = r.width / W;
+      tip.show(`<b>Runs ${b.from}–${b.to}</b><br>Skynet wins ${pct(b.skynet)}<br>Bot wins ${pct(b.bot)}<br>Timeouts ${pct(b.timeout)}`, (x + bw / 2) * s + 16, T * s + 16);
+    });
+    hit.addEventListener('mouseleave', tip.hide);
+  });
+  const t = el('text', { x: L + iw / 2, y: H - 2, 'text-anchor': 'middle' }, svg); t.textContent = 'run number (end of block)';
+})();
+
+// Trend line with area, faint grid, emphasized endpoint, crosshair tooltip.
+function trend(id, key, fmt, color, fixed) {
+  const svg = document.getElementById(id);
+  const W = 470, H = 220, L = 44, R = 14, T = 12, B = 28;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const iw = W - L - R, ih = H - T - B;
+  const vals = blocks.map(b => b[key]);
+  let lo = fixed ? fixed[0] : 0, hi = fixed ? fixed[1] : Math.max(...vals) * 1.15 || 1;
+  if (!fixed && Math.min(...vals) < 0) lo = Math.min(...vals) * 1.15;
+  const ticks = fixed ? fixed[2] : niceTicks(lo, hi);
+  lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
+  const x = i => L + (blocks.length === 1 ? iw / 2 : (iw * i) / (blocks.length - 1));
+  const y = v => T + ih * (1 - (v - lo) / (hi - lo));
+  for (const v of ticks) {
+    el('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), class: v === 0 ? 'base' : 'grid' }, svg);
+    const t = el('text', { x: L - 8, y: y(v) + 4, 'text-anchor': 'end' }, svg); t.textContent = fmt(v);
+  }
+  const pts = vals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const base = y(Math.max(lo, 0));
+  el('polygon', { points: `${x(0)},${base} ${pts} ${x(vals.length - 1)},${base}`, fill: color, opacity: 0.12 }, svg);
+  el('polyline', { points: pts, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
+  const lastI = vals.length - 1;
+  el('circle', { cx: x(lastI), cy: y(vals[lastI]), r: 4.5, fill: color, stroke: 'var(--surface)', 'stroke-width': 2 }, svg);
+  for (const i of [0, Math.floor(lastI / 2), lastI]) {
+    const t = el('text', { x: x(i), y: H - 8, 'text-anchor': i === 0 ? 'start' : i === lastI ? 'end' : 'middle' }, svg); t.textContent = `run ${blocks[i].to}`;
+  }
+  const cross = el('line', { y1: T, y2: T + ih, stroke: 'var(--axis)', 'stroke-width': 1, opacity: 0 }, svg);
+  const dot = el('circle', { r: 4, fill: color, stroke: 'var(--surface)', 'stroke-width': 2, opacity: 0 }, svg);
+  const tip = tooltip('tip-' + id);
+  const hit = el('rect', { x: L, y: T, width: iw, height: ih, class: 'hit' }, svg);
+  hit.addEventListener('mousemove', ev => {
+    const r = svg.getBoundingClientRect(), s = r.width / W;
+    const px = (ev.clientX - r.left) / s;
+    const i = Math.max(0, Math.min(lastI, Math.round(((px - L) / iw) * lastI)));
+    cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('opacity', 1);
+    dot.setAttribute('cx', x(i)); dot.setAttribute('cy', y(vals[i])); dot.setAttribute('opacity', 1);
+    tip.show(`<b>Runs ${blocks[i].from}–${blocks[i].to}</b><br>${fmt(vals[i], true)}`, x(i) * s + 16, y(vals[i]) * s + 16);
+  });
+  hit.addEventListener('mouseleave', () => { cross.setAttribute('opacity', 0); dot.setAttribute('opacity', 0); tip.hide(); });
+}
+function niceTicks(lo, hi) {
+  const span = hi - lo, raw = span / 4, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
+  const out = [];
+  for (let v = Math.floor(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+  return out;
+}
+trend('damage', 'dmg', (v, long) => long ? `${Math.round(v)} damage per fight` : Math.round(v), 'var(--skynet)');
+trend('reward', 'reward', (v, long) => long ? `average reward ${v.toFixed(3)}` : v.toFixed(2), 'var(--bot)');
+
+document.getElementById('rows').innerHTML = blocks.map(b => `<tr>
+  <td>${b.from}–${b.to}</td>
+  <td><span class="pill ${b.skynet > 0 ? 'sky' : 'zero'}">${pct(b.skynet)}</span></td>
+  <td>${pct(b.bot)}</td><td>${pct(b.timeout)}</td>
+  <td>${Math.round(b.dmg)}</td><td>${Math.round(b.hp)}</td>
+  <td>${b.reward.toFixed(3)}</td><td>v${b.version}</td></tr>`).join('');
+
+document.getElementById('backups').innerHTML = DATA.backups.map(b =>
+  `<li><span class="run">after run ${b.run}</span><span>v${b.version}</span><span class="file">${b.file}</span></li>`).join('');
+
+document.getElementById('method').textContent =
+  `Each run: a fresh fight in the shared simulation, a bot (aggressor, kiter, hider, or dodger, with random aim accuracy and reaction skill) against Skynet using the latest shared brain, ` +
+  `capped at 120 s. Fights were submitted through the real submit_fight reducer from 12 consented bot identities, so every one passed the same validation a human fight does. ` +
+  `Generated ${DATA.generatedAt}.`;
+</script>
