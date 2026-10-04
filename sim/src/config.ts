@@ -58,7 +58,10 @@ export const VITALS = {
 /** Invulnerability after taking a hit, so a volley can't shred you instantly. */
 export const HURT_INVULN = 0.4;
 
-/** Stamina gates sprinting, jumping, and dashing (no fixed air-jump/air-dash charges). */
+/**
+ * Stamina gates sprinting, jumping, and dashing (no fixed air-jump/air-dash charges).
+ * It only regenerates on the ground, so one airtime is limited to one bar of stamina.
+ */
 export const STAMINA = {
   max: 100,
   regen: 32,

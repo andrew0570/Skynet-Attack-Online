@@ -434,9 +434,11 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.yaw = Math.atan2(-p.wallNX, -p.wallNZ);
   }
 
-  // Stamina regenerates quickly after a short pause (none while sprinting).
+  // Stamina regenerates quickly after a short pause, but only while standing on the ground
+  // (not in the air, gliding, or climbing — otherwise airtime refills it and jumps never end).
+  // The pause still counts down in the air, so regen starts the moment you land.
   if (!sprinting) {
     p.staminaDelay = Math.max(0, p.staminaDelay - dt);
-    if (p.staminaDelay <= 0) p.stamina = Math.min(STAMINA.max, p.stamina + STAMINA.regen * dt);
+    if (p.staminaDelay <= 0 && p.onGround) p.stamina = Math.min(STAMINA.max, p.stamina + STAMINA.regen * dt);
   }
 }

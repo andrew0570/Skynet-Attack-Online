@@ -144,6 +144,15 @@ check('sprint drains stamina, then falls back to run speed', drain.p.stamina ===
   `stamina ${drain.p.stamina.toFixed(1)}, speed ${hspeed(drain.frames[drain.frames.length - 1]).toFixed(1)}`);
 const regen = sim(60 * 4, () => ({}), { setup: p => (p.stamina = 0) });
 check('stamina regenerates to full within ~4 s', regen.p.stamina === STAMINA.max, `${regen.p.stamina.toFixed(1)}`);
+// Long airtime (dropped from 1500 m, mashing jump every 0.42 s): one bar of stamina, no refills.
+const skyfall = sim(60 * 7, t => ({ jump: t % 25 === 0 }), { setup: p => { p.pos.y += 1500; p.onGround = false; } });
+check('no stamina regen in the air: jumps end when the bar does (6 × 16)', skyfall.p.airJumpCount === 6 && !skyfall.p.onGround && skyfall.p.stamina < STAMINA.airJumpCost,
+  `${skyfall.p.airJumpCount} air jumps over 7 s airborne, stamina ${skyfall.p.stamina.toFixed(1)}`);
+const glideRegen = sim(60 * 4, () => ({ glide: true }), { setup: p => { p.pos.y += 200; p.onGround = false; p.stamina = 0; } });
+check('no stamina regen while gliding', glideRegen.p.stamina === 0 && !glideRegen.p.onGround);
+const landRegen = sim(60 * 4, () => ({}), { setup: p => { p.pos.y += 3; p.onGround = false; p.stamina = 0; } });
+check('stamina regenerates after landing', landRegen.p.onGround && landRegen.p.stamina > 80, `${landRegen.p.stamina.toFixed(1)}`);
+
 const exhausted = sim(60, t => ({ jump: t === 0, dash: t === 0 }), { setup: p => (p.stamina = 5) });
 check('no stamina: no jump, no dash', exhausted.frames.every(f => f.onGround && !f.dashing));
 
