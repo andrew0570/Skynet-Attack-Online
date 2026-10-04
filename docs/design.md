@@ -17,6 +17,25 @@ Status: theme **decided**; remaining items are proposals.
 Swords vs. magic vs. human boss: a humanoid boss needs animation work that a solo 24h build
 can't afford; a monster/construct with procedural motion can look great with primitives.
 
+## 2a. Arena (decided, built Sat ~9:30 PM)
+Scorched alien desert crater, **100 m walkable radius**, generated deterministically from
+`ARENA_SEED` in `sim/src/arena.ts` (identical on client, server, bots).
+- **Central pillar** (r 3.5 m, 16 m tall, vine-covered) — Skynet hovers 7 m above its crown,
+  tethered by a red energy beam. Three **elevators** cycle from the ground to the pillar top.
+- **Glade** (r < 30): open combat space with low rubble cover (1.4–2.6 m, vaultable).
+- **Maze** (Maze Runner-style): five concentric rings of decaying concrete walls (r 30–86) with
+  doorways and collapsed low sections, plus radial walls turning the annuli into corridors.
+  Outer run (r 86–100) is open.
+- **Vines** (~30% of tall walls + the pillar): push into them to climb, jump to wall-jump off,
+  auto-mantle at the top. Grabbing vines refills air jump/dash. Bioluminescent bulbs make
+  climbable surfaces readable from afar.
+- **Moving platforms**: pillar elevators, lifts beside maze walls (ride up to run the wall
+  tops), elevated shuttles sliding along corridors and the outer run.
+- **Color language:** cyan = player, red = Skynet, amber = platforms, teal-green = climbable.
+- **Combat intent (M3):** Skynet's ranged attacks use `raycast()` line of sight, so walls and
+  rubble are real cover; Skynet's melee/slam attacks force it down from the pillar, opening
+  windows to strike. Elevators and pillar vines give a vertical route to hit it at its perch.
+
 ## 2. Map — not Unreal
 Unreal is the wrong tool here: no browser export (HTML5 was dropped), Pixel Streaming needs
 GPU servers, heavy builds, and SpacetimeDB's browser SDK is TypeScript.

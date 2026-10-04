@@ -3,14 +3,15 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { createPlayer, heightAt, lerp, PLAYER, SIM_DT, stepPlayer, type PlayerInput } from '@sao/sim';
+import { createPlayer, generateArena, heightAt, lerp, PLAYER, raycast, SIM_DT, stepPlayer, type PlayerInput } from '@sao/sim';
+import { createArenaMeshes } from './arenaMesh';
 import { ThirdPersonCamera } from './camera';
 import { createHero } from './hero';
 import { Input } from './input';
 import { createSkynet, createWorld } from './world';
 
 // Debug view options for screenshots: ?front (camera faces the hero), ?yaw=<radians>, ?close,
-// ?shot (hide overlay).
+// ?shot (hide overlay), ?overview (high fixed camera over the arena), ?at=x,z (spawn point).
 const params = new URLSearchParams(location.search);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -22,10 +23,13 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 createWorld(scene, renderer);
-const skynet = createSkynet();
+const arena = generateArena();
+const arenaMeshes = createArenaMeshes(arena);
+scene.add(arenaMeshes.group);
+const skynet = createSkynet(arena.skynetAnchor);
 scene.add(skynet.group);
 
-const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 400);
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 700);
 const thirdPerson = new ThirdPersonCamera(camera);
 if (params.has('front')) thirdPerson.yaw = Math.PI;
 if (params.has('yaw')) thirdPerson.yaw = Number(params.get('yaw'));
@@ -41,7 +45,8 @@ const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.in
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
-const player = createPlayer(0, 30);
+const [spawnX, spawnZ] = params.get('at')?.split(',').map(Number) ?? [arena.spawn.x, arena.spawn.z];
+const player = createPlayer(spawnX, spawnZ);
 const hero = createHero();
 scene.add(hero.group);
 
@@ -81,6 +86,7 @@ function readInput(): PlayerInput {
 }
 
 const prevPos = { ...player.pos };
+let simTime = 0;
 let accumulator = 0;
 let last = performance.now();
 let elapsed = 0;
@@ -97,13 +103,16 @@ renderer.setAnimationLoop(() => {
   accumulator += frameDt;
   while (accumulator >= SIM_DT) {
     Object.assign(prevPos, player.pos);
-    stepPlayer(player, readInput(), SIM_DT);
+    stepPlayer(player, readInput(), SIM_DT, arena, simTime);
+    simTime += SIM_DT;
     input.clearPressed();
     accumulator -= SIM_DT;
   }
 
   // Interpolate between the last two sim states for smooth rendering at any refresh rate.
   const alpha = accumulator / SIM_DT;
+  const renderTime = simTime - SIM_DT + alpha * SIM_DT;
+  arenaMeshes.update(renderTime);
   const renderPos = {
     x: lerp(prevPos.x, player.pos.x, alpha),
     y: lerp(prevPos.y, player.pos.y, alpha),
@@ -113,14 +122,21 @@ renderer.setAnimationLoop(() => {
   hero.group.rotation.y = player.yaw;
   hero.update(player, frameDt, elapsed);
 
-  const ground = heightAt(renderPos.x, renderPos.z);
+  // Shadow sits on whatever is directly below: terrain, a wall top, or a platform.
+  const below = raycast(arena, { x: renderPos.x, y: renderPos.y + 0.1, z: renderPos.z }, { x: renderPos.x, y: renderPos.y - 60, z: renderPos.z }, renderTime);
+  const ground = Math.max(heightAt(renderPos.x, renderPos.z), renderPos.y + 0.1 - below * 60.1);
   const height = Math.max(0, renderPos.y - ground);
   shadow.position.set(renderPos.x, ground + 0.03, renderPos.z);
   shadow.scale.setScalar(1 / (1 + height * 0.08));
   (shadow.material as THREE.MeshBasicMaterial).opacity = 0.45 / (1 + height * 0.12);
 
   skynet.animate(elapsed);
-  thirdPerson.update(renderPos, frameDt);
+  if (params.has('overview')) {
+    camera.position.set(0, 150, 140);
+    camera.lookAt(0, 0, 0);
+  } else {
+    thirdPerson.update(renderPos, frameDt, arena, renderTime);
+  }
 
   hud.classList.toggle('hidden', input.locked || params.has('shot'));
   dashBar.style.width = `${(1 - player.dashCooldown / PLAYER.dashCooldown) * 100}%`;

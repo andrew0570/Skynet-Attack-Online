@@ -19,7 +19,14 @@ Q / right-click dash. Tunables in `sim/src/config.ts` (`PLAYER`).
 - **Done when:** you can run, jump, and dash around the crater and it feels fast and responsive.
 - **Cut line:** flat ground with a circular boundary wall instead of the heightmap.
 
-## M3 — Skynet + combat loop · 10:45 PM → 1:15 AM
+## M2.5 — Hero + maze arena · 8:40 → ~9:45 PM ✅ (added)
+Armored hero + laser sword + bloom; 100 m maze arena with pillar, vines, moving platforms,
+collision, camera wall-avoidance, `raycast` line of sight. Schedule below shifted to match.
+
+## M3 — Skynet + combat loop · 10:00 PM → 12:30 AM
+Arena-aware design: Skynet perches above the pillar; ranged moves (Volley) are blocked by walls
+via `raycast`; Lunge/Slam bring it down to the target, opening a window to strike. Sword
+swing trail lands here too.
 - Skynet visuals: glowing core + orbiting blade ring, procedural bob/spin, color telegraphs.
 - 4 moves in `sim/`: **Lunge, Sweep, Slam, Volley**, each with telegraph → active → recovery.
 - Player blade attack (short arc, cooldown); HP for both; hit detection in `sim/`.
@@ -28,7 +35,7 @@ Q / right-click dash. Tunables in `sim/src/config.ts` (`PLAYER`).
 - **Done when:** a full fight is playable start to finish, and both win and loss are possible.
 - **Cut line:** 3 moves (drop Volley); skip aim modes.
 
-## M4 — Learning brain + SpacetimeDB · 1:15 → 3:30 AM
+## M4 — Learning brain + SpacetimeDB · 12:30 → 2:45 AM
 - `sim/brain.ts`: feature vector (~10 features), LinUCB arm selection, reward windows
   (damage dealt − λ·damage taken, clipped).
 - Server tables: `player` (consent — exists), `fight`, `decision`, `policy_arm`,
@@ -41,7 +48,7 @@ Q / right-click dash. Tunables in `sim/src/config.ts` (`PLAYER`).
   the updated policy.
 - **Cut line:** skip snapshots and player profiles; minimal validation (counts + ranges only).
 
-## M5 — Overnight bot trainer · 3:30 → 4:15 AM
+## M5 — Overnight bot trainer · 2:45 → 3:30 AM
 - `tools/train-bots.ts`: runs `sim/` headless in Node with 3 scripted player styles
   (aggressive, kiter, always-dodges-left), many fights at accelerated time, submitting logs
   through the same `submit_fight` path. Tag bot fights.
@@ -49,7 +56,7 @@ Q / right-click dash. Tunables in `sim/src/config.ts` (`PLAYER`).
   you sleep** — this is what makes Skynet look smart in the demo.
 - **Cut line:** one bot style.
 
-## Sleep · ~4:15 → 8:00 AM
+## Sleep · ~3:30 → 8:00 AM
 
 ---
 

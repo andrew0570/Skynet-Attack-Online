@@ -1,3 +1,4 @@
+import { platformOffset, platformSolid, solidTop, type Arena, type Solid } from './arena';
 import { ARENA_WALK_RADIUS, PLAYER } from './config';
 import { approachAngle, clamp, vec3, type Vec3 } from './math';
 import { heightAt } from './terrain';
@@ -35,6 +36,12 @@ export interface PlayerState {
   invuln: number;
   /** Unit 3D dash direction. */
   dashDir: Vec3;
+  /** Holding onto vines. `wallN` is the surface normal (pointing away from it). */
+  climbing: boolean;
+  wallNX: number;
+  wallNZ: number;
+  /** Index into arena.platforms of the platform being stood on, or -1. */
+  platform: number;
 }
 
 export function createPlayer(x: number, z: number): PlayerState {
@@ -51,6 +58,10 @@ export function createPlayer(x: number, z: number): PlayerState {
     dashCooldown: 0,
     invuln: 0,
     dashDir: vec3(0, 0, 1),
+    climbing: false,
+    wallNX: 0,
+    wallNZ: 0,
+    platform: -1,
   };
 }
 
@@ -75,19 +86,90 @@ function launch(p: PlayerState, dirX: number, dirZ: number, hasMove: boolean, vy
   p.dashTimer = 0;
 }
 
-export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number): void {
+function refillAirMoves(p: PlayerState): void {
+  p.airJumpsLeft = PLAYER.airJumps;
+  p.airDashesLeft = PLAYER.airDashes;
+}
+
+/** Is (x, z) over the solid's footprint (with `margin` of overhang allowed)? */
+function overFootprint(s: Solid, x: number, z: number, margin: number): boolean {
+  const dx = x - s.x;
+  const dz = z - s.z;
+  if (s.shape === 'cylinder') return Math.hypot(dx, dz) <= s.r + margin;
+  const c = Math.cos(s.rot);
+  const sn = Math.sin(s.rot);
+  return Math.abs(dx * c + dz * sn) <= s.hx + margin && Math.abs(-dx * sn + dz * c) <= s.hz + margin;
+}
+
+/** Horizontal push-out of the player circle from a solid; null if not overlapping. */
+function pushOut(s: Solid, x: number, z: number): { nx: number; nz: number; depth: number } | null {
+  const R = PLAYER.radius;
+  const dx = x - s.x;
+  const dz = z - s.z;
+  if (s.shape === 'cylinder') {
+    const d = Math.hypot(dx, dz);
+    if (d >= s.r + R) return null;
+    return d > 1e-6 ? { nx: dx / d, nz: dz / d, depth: s.r + R - d } : { nx: 1, nz: 0, depth: s.r + R };
+  }
+  const c = Math.cos(s.rot);
+  const sn = Math.sin(s.rot);
+  const lx = dx * c + dz * sn;
+  const lz = -dx * sn + dz * c;
+  const qx = clamp(lx, -s.hx, s.hx);
+  const qz = clamp(lz, -s.hz, s.hz);
+  let nlx = lx - qx;
+  let nlz = lz - qz;
+  let d = Math.hypot(nlx, nlz);
+  let depth: number;
+  if (d > 1e-6) {
+    if (d >= R) return null;
+    nlx /= d;
+    nlz /= d;
+    depth = R - d;
+  } else {
+    // Center is inside the box: exit through the nearest face.
+    const px = s.hx - Math.abs(lx);
+    const pz = s.hz - Math.abs(lz);
+    if (px < pz) {
+      nlx = Math.sign(lx) || 1;
+      nlz = 0;
+      depth = px + R;
+    } else {
+      nlx = 0;
+      nlz = Math.sign(lz) || 1;
+      depth = pz + R;
+    }
+  }
+  return { nx: nlx * c - nlz * sn, nz: nlx * sn + nlz * c, depth };
+}
+
+/**
+ * Advance the player one tick. `time` is the sim time at the start of the tick (drives
+ * moving platforms). Deterministic: same inputs + arena + time => same result.
+ */
+export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena: Arena, time: number): void {
   p.coyote = Math.max(0, p.coyote - dt);
   p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
   p.dashCooldown = Math.max(0, p.dashCooldown - dt);
   p.invuln = Math.max(0, p.invuln - dt);
   if (input.jump) p.jumpBuffer = PLAYER.jumpBuffer;
 
+  // Ride the platform we're standing on.
+  if (p.platform >= 0 && p.onGround) {
+    const pl = arena.platforms[p.platform];
+    const a = platformOffset(pl, time);
+    const b = platformOffset(pl, time + dt);
+    p.pos.x += b.x - a.x;
+    p.pos.y += b.y - a.y;
+    p.pos.z += b.z - a.z;
+  }
+
   const moveLen = Math.hypot(input.moveX, input.moveZ);
   const hasMove = moveLen > 0.1;
   const dirX = hasMove ? input.moveX / moveLen : 0;
   const dirZ = hasMove ? input.moveZ / moveLen : 0;
 
-  if (input.dash && p.dashCooldown <= 0 && (p.onGround || p.airDashesLeft > 0)) {
+  if (input.dash && p.dashCooldown <= 0 && (p.onGround || p.climbing || p.airDashesLeft > 0)) {
     // Horizontal heading: move input, else camera aim, else facing.
     let hx = Math.sin(p.yaw);
     let hz = Math.cos(p.yaw);
@@ -105,10 +187,30 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number): void
     p.dashDir.x = hx * cp;
     p.dashDir.y = Math.sin(pitch);
     p.dashDir.z = hz * cp;
-    if (!p.onGround) p.airDashesLeft--;
+    if (!p.onGround && !p.climbing) p.airDashesLeft--;
+    p.climbing = false;
     p.dashTimer = PLAYER.dashTime;
     p.dashCooldown = PLAYER.dashCooldown;
     p.invuln = PLAYER.dashInvuln;
+  }
+
+  if (p.climbing) {
+    const into = -(dirX * p.wallNX + dirZ * p.wallNZ);
+    if (p.jumpBuffer > 0) {
+      // Wall jump: kick away from the surface.
+      p.vel.x = p.wallNX * PLAYER.wallJumpOut;
+      p.vel.z = p.wallNZ * PLAYER.wallJumpOut;
+      p.vel.y = PLAYER.jumpSpeed;
+      p.jumpBuffer = 0;
+      p.climbing = false;
+    } else if (into > 0.3) {
+      // Climb, pressing gently into the surface to keep contact.
+      p.vel.x = -p.wallNX * 2;
+      p.vel.z = -p.wallNZ * 2;
+      p.vel.y = PLAYER.climbSpeed;
+    } else {
+      p.climbing = false; // let go
+    }
   }
 
   if (p.dashTimer > 0) {
@@ -118,7 +220,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number): void
     p.vel.x = p.dashDir.x * speed;
     p.vel.y = p.dashDir.y * speed;
     p.vel.z = p.dashDir.z * speed;
-  } else if (p.onGround) {
+  } else if (p.onGround && !p.climbing) {
     const speed = input.sprint ? PLAYER.sprintSpeed : PLAYER.runSpeed;
     const dvx = dirX * speed - p.vel.x;
     const dvz = dirZ * speed - p.vel.z;
@@ -129,9 +231,9 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number): void
     p.vel.z += dvz * k;
   }
   // Airborne and not dashing: horizontal velocity is locked (committed jump).
-  if (p.dashTimer <= 0) p.vel.y -= PLAYER.gravity * dt;
+  if (p.dashTimer <= 0 && !p.climbing) p.vel.y -= PLAYER.gravity * dt;
 
-  if (p.jumpBuffer > 0) {
+  if (p.jumpBuffer > 0 && !p.climbing) {
     if (p.onGround || p.coyote > 0) {
       launch(p, dirX, dirZ, hasMove, PLAYER.jumpSpeed, PLAYER.jumpBoost);
       p.coyote = 0;
@@ -141,6 +243,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number): void
     }
   }
 
+  const prevFeet = p.pos.y;
   p.pos.x += p.vel.x * dt;
   p.pos.y += p.vel.y * dt;
   p.pos.z += p.vel.z * dt;
@@ -159,22 +262,76 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number): void
     }
   }
 
-  const ground = heightAt(p.pos.x, p.pos.z);
-  const stickToSlope = p.onGround && p.vel.y <= 0 && p.pos.y - ground < 0.4;
-  if (p.pos.y <= ground || stickToSlope) {
+  // Solids at the start and end of this tick (platforms move).
+  const solids: { s: Solid; prevTop: number; platform: number }[] = [];
+  for (const s of arena.statics) solids.push({ s, prevTop: solidTop(s), platform: -1 });
+  arena.platforms.forEach((pl, i) => solids.push({ s: platformSolid(pl, time + dt), prevTop: solidTop(platformSolid(pl, time)), platform: i }));
+
+  // Walls: solids whose top was above our step height last tick block us horizontally.
+  const wasClimbing = p.climbing;
+  p.climbing = false;
+  let climbTop = 0;
+  for (const { s, prevTop } of solids) {
+    const top = solidTop(s);
+    if (prevTop <= prevFeet + PLAYER.stepHeight) continue; // a floor candidate, not a wall
+    if (p.pos.y >= top || p.pos.y + PLAYER.height <= s.y) continue;
+    const hit = pushOut(s, p.pos.x, p.pos.z);
+    if (!hit) continue;
+    p.pos.x += hit.nx * hit.depth;
+    p.pos.z += hit.nz * hit.depth;
+    const vn = p.vel.x * hit.nx + p.vel.z * hit.nz;
+    if (vn < 0) {
+      p.vel.x -= vn * hit.nx;
+      p.vel.z -= vn * hit.nz;
+    }
+    // Grab vines when pushing into a climbable surface.
+    if (s.climbable && p.dashTimer <= 0 && hasMove && -(dirX * hit.nx + dirZ * hit.nz) > 0.3) {
+      p.climbing = true;
+      p.wallNX = hit.nx;
+      p.wallNZ = hit.nz;
+      climbTop = top;
+      if (!wasClimbing) refillAirMoves(p);
+    }
+  }
+
+  // Mantle: near the top of a climbable surface, pop up and over.
+  if (p.climbing && p.pos.y > climbTop - 0.9) {
+    p.vel.y = Math.max(p.vel.y, PLAYER.mantleSpeed);
+    p.vel.x = -p.wallNX * 4;
+    p.vel.z = -p.wallNZ * 4;
+    p.climbing = false;
+  }
+
+  // Floors: terrain, plus tops of solids we were above (or within a step of) last tick.
+  let support = heightAt(p.pos.x, p.pos.z);
+  let supportPlatform = -1;
+  for (const { s, prevTop, platform } of solids) {
+    if (prevTop > prevFeet + PLAYER.stepHeight) continue;
+    const top = solidTop(s);
+    if (top > support && overFootprint(s, p.pos.x, p.pos.z, PLAYER.radius * 0.5)) {
+      support = top;
+      supportPlatform = platform;
+    }
+  }
+
+  const stickToGround = p.onGround && p.vel.y <= 0 && p.pos.y - support < 0.4;
+  if (p.pos.y <= support || stickToGround) {
     // A downward air-dash ends on impact instead of sliding along the ground.
     if (!p.onGround && p.dashTimer > 0 && p.dashDir.y < -0.1) p.dashTimer = 0;
-    p.pos.y = ground;
+    p.pos.y = support;
     p.vel.y = Math.max(p.vel.y, 0);
     p.onGround = true;
-    p.airJumpsLeft = PLAYER.airJumps;
-    p.airDashesLeft = PLAYER.airDashes;
+    p.platform = supportPlatform;
+    refillAirMoves(p);
     p.coyote = PLAYER.coyoteTime;
   } else {
     p.onGround = false;
+    p.platform = -1;
   }
 
-  if (Math.hypot(p.vel.x, p.vel.z) > 0.5) {
+  if (Math.hypot(p.vel.x, p.vel.z) > 0.5 && !p.climbing) {
     p.yaw = approachAngle(p.yaw, Math.atan2(p.vel.x, p.vel.z), PLAYER.turnRate * dt);
+  } else if (p.climbing) {
+    p.yaw = Math.atan2(-p.wallNX, -p.wallNZ);
   }
 }

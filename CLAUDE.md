@@ -30,7 +30,11 @@ adaptive fights. Deeper integration of AI brings games to life — the sci-fi ga
   animated (no rigging).
 - **Narrative:** the player community must come together to defeat a highly difficult AI —
   and the community's own fights are what make Skynet smarter.
-- **Player:** agile pilot with an energy blade; sprint, jump, dash. Sci-fi crater arena.
+- **Player:** armored space hero with a laser sword (procedural model + animation in
+  `client/src/hero.ts`); sprint, jump + double jump, aimed 3D dash, vine climbing.
+- **Arena:** 100 m scorched-desert crater with a Maze Runner-style ring maze, decaying
+  concrete walls, climbable vines, moving platforms, and Skynet atop a central pillar.
+  See design.md §2a.
 - Use "Skynet" in code and UI (not "Warden" — that was a placeholder name).
 
 ## Idea
@@ -60,8 +64,9 @@ it fits the "community unites against Skynet" theme. Two tiers, in order:
 Schedule and done-criteria: [docs/milestones.md](docs/milestones.md).
 
 ## Architecture
-- **Simulation (`sim/`, package `@sao/sim`)**: pure TypeScript combat logic — player, Skynet,
-  moves, damage, features, bandit decision. **No Three.js, DOM, or Node imports**, so the same
+- **Simulation (`sim/`, package `@sao/sim`)**: pure TypeScript game logic — terrain, arena
+  generation + collision + `raycast` (line of sight), player controller, and (M3+) Skynet,
+  moves, damage, features, bandit decision. `stepPlayer(p, input, dt, arena, time)`. **No Three.js, DOM, or Node imports**, so the same
   code runs in the browser, the bot trainer, and (for co-op) the SpacetimeDB module. Keep it
   **tick-based** (`step(state, inputs, dt)`) and free of wall-clock/`Math.random` calls
   (pass in an RNG) so the server can own the sim later.

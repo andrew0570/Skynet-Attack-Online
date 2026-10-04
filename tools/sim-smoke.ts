@@ -3,10 +3,17 @@
 import {
   ARENA_WALK_RADIUS,
   createPlayer,
+  EMPTY_ARENA,
+  generateArena,
   heightAt,
+  makeBox,
   NO_INPUT,
+  platformSolid,
+  raycast,
   SIM_DT,
+  solidTop,
   stepPlayer,
+  type Arena,
   type PlayerInput,
   type PlayerState,
 } from '@sao/sim';
@@ -21,16 +28,24 @@ interface Frame {
   aboveGround: number;
   onGround: boolean;
   dashing: boolean;
+  climbing: boolean;
 }
 
-function sim(ticks: number, input: (tick: number, p: PlayerState) => Partial<PlayerInput>, start = { x: 0, z: 30 }) {
+function sim(
+  ticks: number,
+  input: (tick: number, p: PlayerState) => Partial<PlayerInput>,
+  opts: { start?: { x: number; z: number }; arena?: Arena; setup?: (p: PlayerState) => void } = {}
+) {
+  const arena = opts.arena ?? EMPTY_ARENA;
+  const start = opts.start ?? { x: 0, z: 30 };
   const p = createPlayer(start.x, start.z);
+  opts.setup?.(p);
   const frames: Frame[] = [];
   for (let i = 0; i < ticks; i++) {
-    stepPlayer(p, { ...NO_INPUT, ...input(i, p) }, SIM_DT);
+    stepPlayer(p, { ...NO_INPUT, ...input(i, p) }, SIM_DT, arena, i * SIM_DT);
     frames.push({
       x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.vel.x, vy: p.vel.y, vz: p.vel.z,
-      aboveGround: p.pos.y - heightAt(p.pos.x, p.pos.z), onGround: p.onGround, dashing: p.dashTimer > 0,
+      aboveGround: p.pos.y - heightAt(p.pos.x, p.pos.z), onGround: p.onGround, dashing: p.dashTimer > 0, climbing: p.climbing,
     });
   }
   return { p, frames };
@@ -43,7 +58,7 @@ const firstLanding = (frames: Frame[], after = 1) => frames.findIndex((fr, i) =>
 const checks: [string, boolean, string][] = [];
 const check = (name: string, ok: boolean, detail = '') => checks.push([name, ok, detail]);
 
-// Ground movement
+// ---------- Open-ground movement ----------
 const idle = sim(120, () => ({}));
 check('idle stays grounded', idle.p.onGround && Math.abs(idle.p.pos.z - 30) < 0.01);
 const run = sim(60, () => ({ moveZ: -1 }));
@@ -51,7 +66,6 @@ check('run speed ~10', Math.abs(maxOf(run.frames, hspeed) - 10) < 0.5, maxOf(run
 const sprint = sim(60, () => ({ moveZ: -1, sprint: true }));
 check('sprint speed ~16', Math.abs(maxOf(sprint.frames, hspeed) - 16) < 0.5);
 
-// Jumps: higher, farther, committed
 const jump = sim(120, t => ({ jump: t === 0 }));
 const jumpHeight = maxOf(jump.frames, f => f.aboveGround);
 check('jump height > 3.5 m', jumpHeight > 3.5 && jump.p.onGround, jumpHeight.toFixed(2));
@@ -64,7 +78,6 @@ const land = firstLanding(longJump.frames, takeoffTick + 2);
 const jumpDist = Math.abs(longJump.frames[land].z - longJump.frames[takeoffTick].z);
 check('sprint jump distance > 15 m', jumpDist > 15, jumpDist.toFixed(1));
 
-// Jump forward, then hold the opposite direction mid-air: velocity must not change.
 const committed = sim(120, t => ({ moveZ: t < 3 ? -1 : 1, jump: t === 0 }));
 const cLand = firstLanding(committed.frames, 2);
 const airborne = committed.frames.slice(1, cLand);
@@ -73,29 +86,71 @@ check('jump direction is locked in the air', airborne.every(f => Math.abs(f.vz -
 const redirect = sim(60, t => ({ moveZ: t < 15 ? -1 : 0, moveX: t >= 15 ? 1 : 0, jump: t === 0 || t === 15 }));
 check('double jump redirects', redirect.frames[16].vx > 9 && Math.abs(redirect.frames[16].vz) < 1e-9);
 
-// Dashes: farther, 3D, limited in the air
 const dash = sim(15, t => ({ moveZ: -1, dash: t === 0 }));
-const dashDist = 30 - dash.p.pos.z;
-check('dash covers > 10 m', dashDist > 10, dashDist.toFixed(1));
-
+check('dash covers > 10 m', 30 - dash.p.pos.z > 10, (30 - dash.p.pos.z).toFixed(1));
 const upDash = sim(90, t => ({ dash: t === 0, aimZ: -1, aimPitch: 0.8 }));
-const upHeight = maxOf(upDash.frames, f => f.aboveGround);
-check('up-dash gains > 6 m', upHeight > 6, upHeight.toFixed(1));
-
+check('up-dash gains > 6 m', maxOf(upDash.frames, f => f.aboveGround) > 6, maxOf(upDash.frames, f => f.aboveGround).toFixed(1));
 const groundDown = sim(15, t => ({ dash: t === 0, aimZ: -1, aimPitch: -1 }));
 check('ground dash cannot aim into floor', groundDown.frames.every(f => f.onGround) && 30 - groundDown.p.pos.z > 10);
-
 const downDash = sim(120, t => ({ jump: t === 0, dash: t === 20, aimZ: -1, aimPitch: -1 }));
 const dLand = firstLanding(downDash.frames, 21);
 check('down-dash slams and ends on landing', dLand > 0 && dLand < 30 && !downDash.frames[dLand].dashing, `landed tick ${dLand}`);
-
-// Jump, air-dash, double jump, try a second air-dash after cooldown: it must be refused.
 const limit = sim(80, t => ({ jump: t === 0 || t === 20, dash: t === 3 || t === 45, aimZ: -1, aimPitch: 0.3 }));
 check('one air-dash per airtime', !limit.frames[46].onGround && !limit.frames[46].dashing);
 
-// Boundary
-const wall = sim(600, () => ({ moveZ: 1, sprint: true }));
-check('rim boundary holds', Math.hypot(wall.p.pos.x, wall.p.pos.z) <= ARENA_WALK_RADIUS + 1e-6);
+const rim = sim(900, () => ({ moveZ: 1, sprint: true }));
+check('arena boundary holds', Math.hypot(rim.p.pos.x, rim.p.pos.z) <= ARENA_WALK_RADIUS + 1e-6);
+
+// ---------- Solids ----------
+const wallTop = heightAt(0, 20) + 6;
+const wallArena: Arena = { ...EMPTY_ARENA, statics: [makeBox('wall', 0, 20, 5, 0.6, 0, -5, wallTop)] };
+const blocked = sim(120, () => ({ moveZ: -1, sprint: true }), { arena: wallArena });
+check('wall blocks movement', Math.abs(blocked.p.pos.z - 21.0) < 0.05, blocked.p.pos.z.toFixed(2));
+
+const landOn = sim(90, () => ({}), { arena: wallArena, start: { x: 0, z: 20 }, setup: p => (p.pos.y = wallTop + 3) });
+check('falls onto and stands on a wall top', landOn.p.onGround && Math.abs(landOn.p.pos.y - wallTop) < 1e-6);
+
+const vineArena: Arena = { ...EMPTY_ARENA, statics: [makeBox('wall', 0, 20, 5, 0.6, 0, -5, wallTop, true)] };
+const climb = sim(240, (_, p) => (p.onGround && p.pos.y > wallTop - 0.1 ? {} : { moveZ: -1 }), { arena: vineArena, start: { x: 0, z: 22 } });
+const climbTick = climb.frames.findIndex(f => f.climbing);
+check('vines: climb up and mantle onto the top', climbTick >= 0 && climb.p.onGround && Math.abs(climb.p.pos.y - wallTop) < 1e-6, `top reached: ${climb.p.pos.y.toFixed(2)}`);
+
+const wallJump = sim(40, t => ({ moveZ: t < 20 ? -1 : 0, jump: t === 20 }), { arena: vineArena, start: { x: 0, z: 22 } });
+check('vines: wall jump kicks away', wallJump.frames[19].climbing && wallJump.frames[21].vz > 5 && wallJump.frames[21].vy > 10);
+
+const noVines = sim(120, () => ({ moveZ: -1 }), { arena: wallArena, start: { x: 0, z: 22 } });
+check('plain walls are not climbable', noVines.frames.every(f => !f.climbing && f.aboveGround < 0.01));
+
+const g30 = heightAt(0, 30);
+const shuttleArena: Arena = {
+  ...EMPTY_ARENA,
+  platforms: [{ base: makeBox('platform', 0, 30, 2, 2, 0, g30, g30 + 0.4), amp: { x: 5, y: 0, z: 0 }, period: 4, phase: 0 }],
+};
+const ride = sim(60, () => ({}), { arena: shuttleArena, setup: p => (p.pos.y = g30 + 0.4) });
+const shuttleX = platformSolid(shuttleArena.platforms[0], 60 * SIM_DT).x;
+check('moving platform carries the player', Math.abs(ride.p.pos.x - shuttleX) < 0.2 && ride.p.onGround, `player ${ride.p.pos.x.toFixed(2)} vs platform ${shuttleX.toFixed(2)}`);
+
+const liftArena: Arena = {
+  ...EMPTY_ARENA,
+  platforms: [{ base: makeBox('platform', 0, 30, 2, 2, 0, g30 + 4, g30 + 4.4), amp: { x: 0, y: 4, z: 0 }, period: 4, phase: -Math.PI / 2 }],
+};
+const lift = sim(120, () => ({}), { arena: liftArena, setup: p => (p.pos.y = g30 + 0.4) });
+const liftTop = solidTop(platformSolid(liftArena.platforms[0], 120 * SIM_DT));
+check('elevator lifts the player', lift.p.onGround && Math.abs(lift.p.pos.y - liftTop) < 0.15 && lift.p.pos.y > g30 + 7, `y=${lift.p.pos.y.toFixed(2)}`);
+
+const losBlocked = raycast(wallArena, { x: 0, y: 1, z: 30 }, { x: 0, y: 1, z: 10 }, 0);
+const losOver = raycast(wallArena, { x: 0, y: wallTop + 2, z: 30 }, { x: 0, y: wallTop + 2, z: 10 }, 0);
+check('line of sight blocked by wall, clear over it', Math.abs(losBlocked - 0.47) < 0.01 && losOver === 1, `t=${losBlocked.toFixed(3)}`);
+
+// ---------- Generated maze ----------
+const arena = generateArena();
+const spawnIdle = sim(120, () => ({}), { arena, start: arena.spawn });
+check('maze generates walls, vines, platforms', arena.statics.length > 60 && arena.statics.some(s => s.climbable) && arena.platforms.length === 17,
+  `${arena.statics.length} solids, ${arena.statics.filter(s => s.climbable).length} climbable, ${arena.platforms.length} platforms`);
+check('spawn is clear', Math.hypot(spawnIdle.p.pos.x - arena.spawn.x, spawnIdle.p.pos.z - arena.spawn.z) < 1e-6 && spawnIdle.p.onGround);
+const pillarTop = solidTop(arena.pillar!);
+const pillarClimb = sim(360, (_, p) => (p.onGround && p.pos.y > pillarTop - 0.1 ? {} : { moveZ: -1 }), { arena, start: { x: 0, z: 4.5 } });
+check('climb the central pillar to the top', pillarClimb.p.onGround && Math.abs(pillarClimb.p.pos.y - pillarTop) < 1e-6, `y=${pillarClimb.p.pos.y.toFixed(1)} top=${pillarTop.toFixed(1)}`);
 
 let failed = 0;
 for (const [name, ok, detail] of checks) {

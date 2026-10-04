@@ -1,27 +1,27 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { ARENA_RADIUS, heightAt, smoothstep } from '@sao/sim';
+import { ARENA_RADIUS, heightAt, smoothstep, type Vec3 } from '@sao/sim';
 
 const SKY = 0x1a0b08;
 
 export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): void {
   scene.background = new THREE.Color(SKY);
-  scene.fog = new THREE.Fog(SKY, 50, 170);
+  scene.fog = new THREE.Fog(SKY, 70, 290);
   // Metallic armor needs something to reflect, or it renders near-black.
   scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environmentIntensity = 0.35;
 
-  scene.add(new THREE.HemisphereLight(0xc08a70, 0x2a1810, 1.5));
-  const sun = new THREE.DirectionalLight(0xffc9a0, 2.4);
-  sun.position.set(40, 60, 20);
+  scene.add(new THREE.HemisphereLight(0xc08a70, 0x2a1810, 1.1));
+  const sun = new THREE.DirectionalLight(0xffc9a0, 2.2);
+  sun.position.set(60, 80, 25);
   scene.add(sun);
 
   scene.add(createTerrain());
 }
 
 function createTerrain(): THREE.Mesh {
-  const size = (ARENA_RADIUS + 60) * 2;
-  const geo = new THREE.PlaneGeometry(size, size, 220, 220);
+  const size = (ARENA_RADIUS + 70) * 2;
+  const geo = new THREE.PlaneGeometry(size, size, 260, 260);
   geo.rotateX(-Math.PI / 2);
 
   const pos = geo.attributes.position as THREE.BufferAttribute;
@@ -36,9 +36,9 @@ function createTerrain(): THREE.Mesh {
     const y = heightAt(x, z);
     pos.setY(i, y);
     const r = Math.hypot(x, z);
-    c.copy(floor).lerp(rim, smoothstep(ARENA_RADIUS - 12, ARENA_RADIUS + 6, r));
-    // Scorched ring around the center where Skynet hovers.
-    c.lerp(scorch, (1 - smoothstep(4, 14, r)) * 0.7);
+    c.copy(floor).lerp(rim, smoothstep(ARENA_RADIUS - 6, ARENA_RADIUS + 12, r));
+    // Scorched ring around the pillar where Skynet hovers.
+    c.lerp(scorch, (1 - smoothstep(4, 18, r)) * 0.7);
     colors[i * 3] = c.r;
     colors[i * 3 + 1] = c.g;
     colors[i * 3 + 2] = c.b;
@@ -52,7 +52,8 @@ function createTerrain(): THREE.Mesh {
   );
 }
 
-export function createSkynet(): { group: THREE.Group; animate: (t: number) => void } {
+/** Skynet's core, hovering over the pillar at `anchor`. */
+export function createSkynet(anchor: Vec3): { group: THREE.Group; animate: (t: number) => void } {
   const group = new THREE.Group();
   const core = new THREE.Mesh(
     new THREE.IcosahedronGeometry(1.6, 0),
@@ -62,16 +63,15 @@ export function createSkynet(): { group: THREE.Group; animate: (t: number) => vo
     new THREE.TorusGeometry(3.2, 0.12, 8, 48),
     new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.9, roughness: 0.3 })
   );
-  group.add(core, ring, new THREE.PointLight(0xff3311, 40, 30));
-
-  const baseY = heightAt(0, 0) + 6;
-  group.position.set(0, baseY, 0);
+  group.add(core, ring, new THREE.PointLight(0xff3311, 120, 60));
+  group.scale.setScalar(2);
+  group.position.set(anchor.x, anchor.y, anchor.z);
   return {
     group,
     animate(t: number) {
       core.rotation.set(t * 0.7, t * 1.1, 0);
       ring.rotation.set(Math.PI / 2 + Math.sin(t) * 0.3, 0, t * 2);
-      group.position.y = baseY + Math.sin(t * 1.5) * 0.4;
+      group.position.y = anchor.y + Math.sin(t * 1.5) * 0.6;
     },
   };
 }

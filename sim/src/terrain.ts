@@ -39,9 +39,9 @@ function fbm(x: number, z: number, seed: number, octaves = 4): number {
  */
 export function heightAt(x: number, z: number): number {
   const r = Math.hypot(x, z);
-  // Gentle undulation on the floor, flattened near the center where Skynet hovers.
-  const floor = fbm(x * 0.04, z * 0.04, TERRAIN_SEED) * 2.4 * (0.35 + 0.65 * smoothstep(6, 28, r));
-  const rim = smoothstep(ARENA_RADIUS - 10, ARENA_RADIUS + 4, r) * 14;
-  const rimRoughness = smoothstep(ARENA_RADIUS - 10, ARENA_RADIUS + 10, r) * fbm(x * 0.08, z * 0.08, TERRAIN_SEED + 7) * 8;
+  // Gentle undulation on the floor, flattened near the central pillar.
+  const floor = fbm(x * 0.035, z * 0.035, TERRAIN_SEED) * 2.4 * (0.35 + 0.65 * smoothstep(6, 28, r));
+  const rim = smoothstep(ARENA_RADIUS - 2, ARENA_RADIUS + 16, r) * 22;
+  const rimRoughness = smoothstep(ARENA_RADIUS - 2, ARENA_RADIUS + 20, r) * fbm(x * 0.06, z * 0.06, TERRAIN_SEED + 7) * 10;
   return floor + rim + rimRoughness;
 }
