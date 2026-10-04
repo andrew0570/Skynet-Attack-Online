@@ -1,25 +1,56 @@
 import * as THREE from 'three';
-import { createPlayer, lerp, PLAYER, SIM_DT, stepPlayer, type PlayerInput } from '@sao/sim';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { createPlayer, heightAt, lerp, PLAYER, SIM_DT, stepPlayer, type PlayerInput } from '@sao/sim';
 import { ThirdPersonCamera } from './camera';
+import { createHero } from './hero';
 import { Input } from './input';
-import { createPlayerMesh, createSkynet, createWorld } from './world';
+import { createSkynet, createWorld } from './world';
+
+// Debug view options for screenshots: ?front (camera faces the hero), ?yaw=<radians>, ?close,
+// ?shot (hide overlay).
+const params = new URLSearchParams(location.search);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.3;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-createWorld(scene);
+createWorld(scene, renderer);
 const skynet = createSkynet();
 scene.add(skynet.group);
 
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 400);
 const thirdPerson = new ThirdPersonCamera(camera);
+if (params.has('front')) thirdPerson.yaw = Math.PI;
+if (params.has('yaw')) thirdPerson.yaw = Number(params.get('yaw'));
+if (params.has('close')) {
+  thirdPerson.distance = 3.2;
+  thirdPerson.pitch = 0.15;
+}
+
+// Bloom picks up HDR colors (> 1.0): visor, armor seams, laser blade, Skynet's core.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.55, 0.35, 1.0);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
 
 const player = createPlayer(0, 30);
-const playerMesh = createPlayerMesh();
-scene.add(playerMesh.group);
+const hero = createHero();
+scene.add(hero.group);
+
+// Blob shadow: shows where you'll land during jumps and aimed dashes.
+const shadow = new THREE.Mesh(
+  new THREE.CircleGeometry(0.55, 24).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })
+);
+scene.add(shadow);
 
 const input = new Input(renderer.domElement);
 const hud = document.getElementById('hud')!;
@@ -29,6 +60,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 function readInput(): PlayerInput {
@@ -77,16 +109,21 @@ renderer.setAnimationLoop(() => {
     y: lerp(prevPos.y, player.pos.y, alpha),
     z: lerp(prevPos.z, player.pos.z, alpha),
   };
-  playerMesh.group.position.set(renderPos.x, renderPos.y, renderPos.z);
-  playerMesh.group.rotation.y = player.yaw;
-  playerMesh.body.emissiveIntensity = player.invuln > 0 ? 1.4 : 0.15;
-  playerMesh.group.scale.set(1, player.dashTimer > 0 ? 0.85 : 1, player.dashTimer > 0 ? 1.3 : 1);
+  hero.group.position.set(renderPos.x, renderPos.y, renderPos.z);
+  hero.group.rotation.y = player.yaw;
+  hero.update(player, frameDt, elapsed);
+
+  const ground = heightAt(renderPos.x, renderPos.z);
+  const height = Math.max(0, renderPos.y - ground);
+  shadow.position.set(renderPos.x, ground + 0.03, renderPos.z);
+  shadow.scale.setScalar(1 / (1 + height * 0.08));
+  (shadow.material as THREE.MeshBasicMaterial).opacity = 0.45 / (1 + height * 0.12);
 
   skynet.animate(elapsed);
   thirdPerson.update(renderPos, frameDt);
 
-  hud.classList.toggle('hidden', input.locked);
+  hud.classList.toggle('hidden', input.locked || params.has('shot'));
   dashBar.style.width = `${(1 - player.dashCooldown / PLAYER.dashCooldown) * 100}%`;
 
-  renderer.render(scene, camera);
+  composer.render();
 });

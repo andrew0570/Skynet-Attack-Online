@@ -12,6 +12,7 @@ const DASH_PITCH_GAIN = 1.4;
 export class ThirdPersonCamera {
   yaw = 0;
   pitch = NEUTRAL_PITCH;
+  distance = DISTANCE;
   private target = new THREE.Vector3();
 
   constructor(public camera: THREE.PerspectiveCamera) {}
@@ -42,9 +43,9 @@ export class ThirdPersonCamera {
     const cp = Math.cos(this.pitch);
     const cam = this.camera.position;
     cam.set(
-      this.target.x + Math.sin(this.yaw) * cp * DISTANCE,
-      this.target.y + Math.sin(this.pitch) * DISTANCE,
-      this.target.z + Math.cos(this.yaw) * cp * DISTANCE
+      this.target.x + Math.sin(this.yaw) * cp * this.distance,
+      this.target.y + Math.sin(this.pitch) * this.distance,
+      this.target.z + Math.cos(this.yaw) * cp * this.distance
     );
     cam.y = Math.max(cam.y, heightAt(cam.x, cam.z) + 0.6);
     this.camera.lookAt(this.target);
