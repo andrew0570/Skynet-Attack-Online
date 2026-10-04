@@ -260,8 +260,10 @@ function trend(id, key, fmt, color, fixed) {
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   const iw = W - L - R, ih = H - T - B;
   const vals = blocks.map(b => b[key]);
-  let lo = fixed ? fixed[0] : 0, hi = fixed ? fixed[1] : Math.max(...vals) * 1.15 || 1;
-  if (!fixed && Math.min(...vals) < 0) lo = Math.min(...vals) * 1.15;
+  // Always include zero, so the area reads as distance from zero (above or below it).
+  let lo = fixed ? fixed[0] : Math.min(0, Math.min(...vals) * 1.15);
+  let hi = fixed ? fixed[1] : Math.max(0, Math.max(...vals) * 1.15);
+  if (hi === lo) hi = lo + 1;
   const ticks = fixed ? fixed[2] : niceTicks(lo, hi);
   lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
   const x = i => L + (blocks.length === 1 ? iw / 2 : (iw * i) / (blocks.length - 1));
@@ -271,7 +273,7 @@ function trend(id, key, fmt, color, fixed) {
     const t = el('text', { x: L - 8, y: y(v) + 4, 'text-anchor': 'end' }, svg); t.textContent = fmt(v);
   }
   const pts = vals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
-  const base = y(Math.max(lo, 0));
+  const base = y(0);
   el('polygon', { points: `${x(0)},${base} ${pts} ${x(vals.length - 1)},${base}`, fill: color, opacity: 0.12 }, svg);
   el('polyline', { points: pts, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
   const lastI = vals.length - 1;
