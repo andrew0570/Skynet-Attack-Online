@@ -82,6 +82,7 @@ function readInput(): PlayerInput {
     aimX: aim.x,
     aimZ: aim.z,
     aimPitch: aim.pitch,
+    glide: input.isHeld('ControlLeft') || input.isHeld('ControlRight'),
   };
 }
 

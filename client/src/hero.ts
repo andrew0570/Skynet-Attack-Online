@@ -216,6 +216,16 @@ export function createHero(): Hero {
       pose.shoulderZ = [0.25, -0.25];
       pose.elbow = [-0.2, 0];
       pose.thrust = 1.6;
+    } else if (p.gliding) {
+      // Wingsuit glide: body prone, arms spread wide, legs trailing, thrusters idling.
+      pose.bodyPitch = 1.25;
+      pose.torsoPitch = 0;
+      pose.hip = [0.25, 0.25];
+      pose.knee = [0.15, 0.15];
+      pose.shoulderX = [-0.1, -0.1];
+      pose.shoulderZ = [1.35, -1.35];
+      pose.elbow = [0, 0];
+      pose.thrust = 0.6;
     } else if (!p.onGround) {
       const rising = clamp(p.vel.y / PLAYER.jumpSpeed, -1, 1);
       if (rising > 0) {

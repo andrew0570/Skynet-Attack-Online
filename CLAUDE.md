@@ -31,7 +31,9 @@ adaptive fights. Deeper integration of AI brings games to life — the sci-fi ga
 - **Narrative:** the player community must come together to defeat a highly difficult AI —
   and the community's own fights are what make Skynet smarter.
 - **Player:** armored space hero with a laser sword (procedural model + animation in
-  `client/src/hero.ts`); sprint, jump + double jump, aimed 3D dash, vine climbing.
+  `client/src/hero.ts`); sprint, jump + double jump with air steering, aimed 3D dash (up to
+  ~83°), vine climbing + wall jump, Ctrl glide (look down to dive). Clicking to play enters
+  fullscreen + Keyboard Lock so Ctrl+W can't close the tab mid-glide.
 - **Arena:** 100 m scorched-desert crater: Skynet atop a central pillar, four open cardinal
   corridors (its lines of attack), four walled multi-level fortresses with a shifting maze
   (sinking/sliding walls), leaning half-buried towers, fallen-tower ramps, climbable vines.

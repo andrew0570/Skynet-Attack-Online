@@ -15,11 +15,13 @@ export interface PlayerInput {
   /** Camera's horizontal forward direction; a dash with no move input goes this way. */
   aimX: number;
   aimZ: number;
-  /** Dash elevation in radians: positive dashes upward, negative downward. */
+  /** Dash elevation in radians: positive dashes upward, negative downward. Also steers glides. */
   aimPitch: number;
+  /** Held: glide while airborne. */
+  glide: boolean;
 }
 
-export const NO_INPUT: PlayerInput = { moveX: 0, moveZ: 0, sprint: false, jump: false, dash: false, aimX: 0, aimZ: 0, aimPitch: 0 };
+export const NO_INPUT: PlayerInput = { moveX: 0, moveZ: 0, sprint: false, jump: false, dash: false, aimX: 0, aimZ: 0, aimPitch: 0, glide: false };
 
 export interface PlayerState {
   pos: Vec3;
@@ -40,6 +42,9 @@ export interface PlayerState {
   climbing: boolean;
   wallNX: number;
   wallNZ: number;
+  gliding: boolean;
+  /** Seconds left in a vine mantle (air control paused). */
+  mantle: number;
   /** Index into arena.movers of the shifting wall being stood on, or -1. */
   mover: number;
 }
@@ -61,13 +66,15 @@ export function createPlayer(x: number, z: number): PlayerState {
     climbing: false,
     wallNX: 0,
     wallNZ: 0,
+    gliding: false,
+    mantle: 0,
     mover: -1,
   };
 }
 
 /**
  * Launch into a jump. With move input, horizontal velocity snaps to that direction; without
- * it, current momentum is kept. Either way it is then locked until the next jump/dash/landing.
+ * it, current momentum is kept (and boosted on a ground jump).
  */
 function launch(p: PlayerState, dirX: number, dirZ: number, hasMove: boolean, vy: number, boost: number): void {
   const speed = Math.hypot(p.vel.x, p.vel.z);
@@ -152,6 +159,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
   p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
   p.dashCooldown = Math.max(0, p.dashCooldown - dt);
   p.invuln = Math.max(0, p.invuln - dt);
+  p.mantle = Math.max(0, p.mantle - dt);
   if (input.jump) p.jumpBuffer = PLAYER.jumpBuffer;
 
   // Ride the shifting wall we're standing on.
@@ -213,6 +221,21 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     }
   }
 
+  /** Accelerate horizontal velocity toward (tx, tz) by at most accel·dt. */
+  const steer = (tx: number, tz: number, accel: number) => {
+    const dvx = tx - p.vel.x;
+    const dvz = tz - p.vel.z;
+    const dl = Math.hypot(dvx, dvz);
+    const maxDv = accel * dt;
+    const k = dl > maxDv ? maxDv / dl : 1;
+    p.vel.x += dvx * k;
+    p.vel.z += dvz * k;
+  };
+
+  p.gliding = input.glide && !p.onGround && !p.climbing && p.dashTimer <= 0;
+  const hs = Math.hypot(p.vel.x, p.vel.z);
+  let maxFall = Infinity;
+
   if (p.dashTimer > 0) {
     p.dashTimer -= dt;
     // Full speed during the dash, then carry sprint-speed momentum along the dash direction.
@@ -222,16 +245,32 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.vel.z = p.dashDir.z * speed;
   } else if (p.onGround && !p.climbing) {
     const speed = input.sprint ? PLAYER.sprintSpeed : PLAYER.runSpeed;
-    const dvx = dirX * speed - p.vel.x;
-    const dvz = dirZ * speed - p.vel.z;
-    const dl = Math.hypot(dvx, dvz);
-    const maxDv = PLAYER.groundAccel * dt;
-    const k = dl > maxDv ? maxDv / dl : 1;
-    p.vel.x += dvx * k;
-    p.vel.z += dvz * k;
+    steer(dirX * speed, dirZ * speed, PLAYER.groundAccel);
+  } else if (p.gliding) {
+    const dive = Math.max(0, -input.aimPitch);
+    const rise = Math.max(0, input.aimPitch);
+    const speed = PLAYER.glideSpeed + dive * PLAYER.glideDiveSpeed;
+    maxFall = Math.max(PLAYER.glideMinFall, PLAYER.glideFallSpeed + dive * PLAYER.glideDiveFall - rise * 1.5);
+    if (hasMove) steer(dirX * speed, dirZ * speed, PLAYER.glideAccel);
+    else if (hs > 0.5) steer((p.vel.x / hs) * speed, (p.vel.z / hs) * speed, PLAYER.glideAccel);
+  } else if (!p.climbing && hasMove && p.mantle <= 0) {
+    // Air control: rotate velocity toward the input (no momentum loss through the turn) and
+    // build up to run/sprint speed if slower.
+    const speed = Math.min(Math.max(hs, input.sprint ? PLAYER.sprintSpeed : PLAYER.runSpeed), PLAYER.maxAirSpeed);
+    if (hs < 1) {
+      steer(dirX * speed, dirZ * speed, PLAYER.airAccel);
+    } else {
+      const ang = approachAngle(Math.atan2(p.vel.z, p.vel.x), Math.atan2(dirZ, dirX), PLAYER.airTurnRate * dt);
+      const mag = Math.min(speed, hs + PLAYER.airAccel * dt);
+      p.vel.x = Math.cos(ang) * mag;
+      p.vel.z = Math.sin(ang) * mag;
+    }
   }
-  // Airborne and not dashing: horizontal velocity is locked (committed jump).
-  if (p.dashTimer <= 0 && !p.climbing) p.vel.y -= PLAYER.gravity * dt;
+  if (p.dashTimer <= 0 && !p.climbing) {
+    // Gliding only softens the fall; rising uses full gravity so it can't stretch jumps upward.
+    p.vel.y -= PLAYER.gravity * (p.gliding && p.vel.y <= 0 ? PLAYER.glideGravityScale : 1) * dt;
+    p.vel.y = Math.max(p.vel.y, -maxFall);
+  }
 
   if (p.jumpBuffer > 0 && !p.climbing) {
     if (p.onGround || p.coyote > 0) {
@@ -297,6 +336,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     // Grab vines when pushing into a climbable surface.
     if (s.climbable && p.dashTimer <= 0 && hasMove && -(dirX * hit.nx + dirZ * hit.nz) > 0.3) {
       p.climbing = true;
+      p.gliding = false;
       p.wallNX = hit.nx;
       p.wallNZ = hit.nz;
       climbTop = top;
@@ -304,12 +344,14 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     }
   }
 
-  // Mantle: near the top of a climbable surface, pop up and over.
+  // Mantle: near the top of a climbable surface, pop up and over. Air control pauses briefly
+  // so holding forward doesn't carry you straight off the far side of a thin wall.
   if (p.climbing && p.pos.y > climbTop - 0.9) {
     p.vel.y = Math.max(p.vel.y, PLAYER.mantleSpeed);
     p.vel.x = -p.wallNX * 4;
     p.vel.z = -p.wallNZ * 4;
     p.climbing = false;
+    p.mantle = 0.35;
   }
 
   // Floors: terrain, plus tops of solids we were above (or within a step of) last tick.
@@ -331,6 +373,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.pos.y = support;
     p.vel.y = Math.max(p.vel.y, 0);
     p.onGround = true;
+    p.gliding = false;
     p.mover = supportMover;
     refillAirMoves(p);
     p.coyote = PLAYER.coyoteTime;

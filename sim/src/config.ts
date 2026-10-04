@@ -38,8 +38,9 @@ export const PLAYER = {
   sprintSpeed: 16,
   groundAccel: 90,
   gravity: 34,
-  // Jumps are committed: no air control, so direction only changes on a jump, dash, wall grab,
-  // or landing.
+  /** Air steering: velocity rotates toward input (rad/s) and speeds up to run/sprint speed. */
+  airTurnRate: 6,
+  airAccel: 35,
   jumpSpeed: 16,
   /** Horizontal speed multiplier applied on a ground jump (carries you farther). */
   jumpBoost: 1.2,
@@ -55,8 +56,17 @@ export const PLAYER = {
   dashInvuln: 0.3,
   /** Dashes allowed per airtime (reset on landing or grabbing vines). */
   airDashes: 1,
-  /** Max dash elevation (radians) up or down. */
-  dashMaxPitch: 1.2,
+  /** Max dash elevation (radians) up or down (~83°). */
+  dashMaxPitch: 1.45,
+  // Glide (hold in the air): slow descent, steerable. Looking down dives (faster, steeper);
+  // looking up floats.
+  glideSpeed: 15,
+  glideDiveSpeed: 14,
+  glideFallSpeed: 3,
+  glideDiveFall: 12,
+  glideMinFall: 1.5,
+  glideGravityScale: 0.35,
+  glideAccel: 22,
   // Vines: push into a climbable surface to climb; jump to kick off it.
   climbSpeed: 7,
   wallJumpOut: 10,

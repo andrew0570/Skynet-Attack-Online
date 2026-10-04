@@ -22,7 +22,8 @@ export class ThirdPersonCamera {
 
   rotate(dx: number, dy: number): void {
     this.yaw -= dx * SENSITIVITY;
-    this.pitch = clamp(this.pitch + dy * SENSITIVITY, -0.25, 1.2);
+    // Wide range so dashes can aim nearly straight up (look up) or down (look down).
+    this.pitch = clamp(this.pitch + dy * SENSITIVITY, -0.9, 1.45);
   }
 
   /** World-space move direction for WASD axes (forward: +1 = W, right: +1 = D). */

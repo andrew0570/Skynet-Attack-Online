@@ -17,7 +17,7 @@ Status: theme **decided**; remaining items are proposals.
 Swords vs. magic vs. human boss: a humanoid boss needs animation work that a solo 24h build
 can't afford; a monster/construct with procedural motion can look great with primitives.
 
-## 2a. Arena (decided, v2 built Sat ~10:15 PM)
+## 2a. Arena (decided, v2 built Sat 9:48 PM)
 Scorched alien desert crater, **100 m walkable radius**, generated deterministically from
 `ARENA_SEED` in `sim/src/arena.ts` (identical on client, server, bots). Tunables in `LAYOUT`.
 - **Central pillar** (r 3.5 m, 16 m tall, vine-covered) — Skynet hovers 7 m above its crown,

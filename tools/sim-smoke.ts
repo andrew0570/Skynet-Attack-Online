@@ -81,10 +81,30 @@ const land = firstLanding(longJump.frames, takeoffTick + 2);
 const jumpDist = Math.abs(longJump.frames[land].z - longJump.frames[takeoffTick].z);
 check('sprint jump distance > 15 m', jumpDist > 15, jumpDist.toFixed(1));
 
-const committed = sim(120, t => ({ moveZ: t < 3 ? -1 : 1, jump: t === 0 }));
-const cLand = firstLanding(committed.frames, 2);
-const airborne = committed.frames.slice(1, cLand);
-check('jump direction is locked in the air', airborne.every(f => Math.abs(f.vz - airborne[0].vz) < 1e-9 && f.vz < -10), `vz=${airborne[0].vz.toFixed(1)}`);
+const steerAir = sim(120, t => ({ moveZ: t < 3 ? -1 : 1, jump: t === 0 }));
+const sLand = firstLanding(steerAir.frames, 2);
+check('air control: reverse direction mid-jump', steerAir.frames[sLand - 1].vz > 5, `vz before landing ${steerAir.frames[sLand - 1].vz.toFixed(1)}`);
+const coast = sim(120, t => ({ moveZ: t < 3 ? -1 : 0, jump: t === 0 }));
+const coastAir = coast.frames.slice(3, firstLanding(coast.frames, 2));
+check('air momentum kept with no input', coastAir.every(f => Math.abs(f.vz - coastAir[0].vz) < 1e-9 && f.vz < -10));
+const turnKeepsSpeed = sim(60, t => ({ moveZ: t < 30 ? -1 : 0, moveX: t >= 33 ? 1 : 0, sprint: true, jump: t === 30 }));
+const takeoffSpeed = hspeed(turnKeepsSpeed.frames[31]);
+check('air steering: 90° turn keeps full speed', Math.abs(turnKeepsSpeed.frames[59].vx - takeoffSpeed) < 0.01 && takeoffSpeed > 16,
+  `${takeoffSpeed.toFixed(1)} m/s → ${hspeed(turnKeepsSpeed.frames[59]).toFixed(1)} m/s heading +x`);
+
+// Glide (hold in the air)
+const plainFall = sim(300, t => ({ jump: t === 0 || t === 30 }));
+const glideFall = sim(600, t => ({ jump: t === 0 || t === 30, glide: t > 30, moveZ: -1 }));
+const plainAir = firstLanding(plainFall.frames, 31);
+const glideAir = firstLanding(glideFall.frames, 31);
+const glideMinVy = Math.min(...glideFall.frames.slice(80, glideAir).map(f => f.vy));
+check('glide: slow capped descent, much longer airtime', glideAir > plainAir * 1.8 && glideMinVy >= -3 - 1e-9, `airtime ${plainAir} → ${glideAir} ticks, min vy ${glideMinVy.toFixed(2)}`);
+check('glide: travels far', 30 - glideFall.frames[glideAir].z > 40, `${(30 - glideFall.frames[glideAir].z).toFixed(1)} m`);
+const glideJump = sim(120, t => ({ jump: t === 0, glide: true }));
+check('glide does not stretch jumps upward', Math.abs(maxOf(glideJump.frames, f => f.aboveGround) - jumpHeight) < 0.05);
+const dive = sim(200, t => ({ jump: t === 0 || t === 30, glide: t > 30, moveZ: -1, aimPitch: -0.8 }));
+const diveMinVy = Math.min(...dive.frames.slice(80, firstLanding(dive.frames, 31)).map(f => f.vy));
+check('glide: looking down dives faster', diveMinVy < -8 && maxOf(dive.frames, hspeed) > 22, `vy ${diveMinVy.toFixed(1)}, speed ${maxOf(dive.frames, hspeed).toFixed(1)}`);
 
 const redirect = sim(60, t => ({ moveZ: t < 15 ? -1 : 0, moveX: t >= 15 ? 1 : 0, jump: t === 0 || t === 15 }));
 check('double jump redirects', redirect.frames[16].vx > 9 && Math.abs(redirect.frames[16].vz) < 1e-9);
@@ -93,6 +113,8 @@ const dash = sim(15, t => ({ moveZ: -1, dash: t === 0 }));
 check('dash covers > 10 m', 30 - dash.p.pos.z > 10, (30 - dash.p.pos.z).toFixed(1));
 const upDash = sim(90, t => ({ dash: t === 0, aimZ: -1, aimPitch: 0.8 }));
 check('up-dash gains > 6 m', maxOf(upDash.frames, f => f.aboveGround) > 6, maxOf(upDash.frames, f => f.aboveGround).toFixed(1));
+const steepDash = sim(90, t => ({ dash: t === 0, aimZ: -1, aimPitch: 2 }));
+check('near-vertical up-dash gains > 13 m', maxOf(steepDash.frames, f => f.aboveGround) > 13, maxOf(steepDash.frames, f => f.aboveGround).toFixed(1));
 const groundDown = sim(15, t => ({ dash: t === 0, aimZ: -1, aimPitch: -1 }));
 check('ground dash cannot aim into floor', groundDown.frames.every(f => f.onGround) && 30 - groundDown.p.pos.z > 10);
 const downDash = sim(120, t => ({ jump: t === 0, dash: t === 20, aimZ: -1, aimPitch: -1 }));
