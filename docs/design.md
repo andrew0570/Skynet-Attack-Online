@@ -77,6 +77,11 @@ Use **Three.js** in the browser:
   and dashes (25). No fixed double-jump/air-dash limits — chain them while stamina lasts (dash
   keeps its 0.55 s cooldown). Sprint 22 m/s.
 - 0.4 s invulnerability after a hit; dash i-frames dodge everything.
+- **Skills** (`SKILLS` in config.ts; aimed by the reticle ray, `aimRay` in combat.ts, which
+  hits Skynet, walls, or terrain): **1 Lightning Strike** — column from the sky at the aim
+  point clamped to 6–35 m, 0.35 s cast, 80 dmg, 7 s cooldown; **2 Blade Rush** — 14 m
+  invulnerable charge along the aim, up to 6 × 16 dmg passing through, 9 s; **3 Sword
+  Beam** — 70 m/s laser from the sword, 40 dmg, blocked by walls, 2.5 s.
   Laser sword: 3-hit combo (28/28/44) toward the camera aim; air swings hang briefly.
 - **Decision log** (`fight.decisions`): per decision, damage dealt and damage taken — the
   reward signal for M4.

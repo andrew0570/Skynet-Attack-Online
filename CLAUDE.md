@@ -34,7 +34,8 @@ adaptive fights. Deeper integration of AI brings games to life — the sci-fi ga
   `client/src/hero.ts`); armor (regenerates) / health (doesn't) / stamina (fast regen; pays
   for sprint, jumps, dashes — no fixed air-jump/air-dash limits); sprint, jumps with air
   steering, aimed 3D dash (up to
-  ~83°), vine climbing + wall jump, Caps Lock glide with fold-out cybernetic wings (look down
+  ~83°), skills 1/2/3 (Lightning Strike, Blade Rush, Sword Beam) aimed with the center
+  reticle, vine climbing + wall jump, Caps Lock glide with fold-out cybernetic wings (look down
   to dive). Glide was moved off Ctrl to avoid Ctrl+W closing the tab — don't bind gameplay to
   Ctrl.
 - **Arena:** 100 m scorched-desert crater: Skynet atop a central pillar, four open cardinal

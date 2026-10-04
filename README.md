@@ -99,6 +99,10 @@ _TODO_
 | Jump / double jump | Space |
 | Dash (follows your aim, including up and down) | Q or right-click |
 | Glide (in the air; look down to dive) | Hold Caps Lock |
+| Laser sword (3-hit combo) | Left-click |
+| Lightning Strike (at the reticle, medium range) | 1 |
+| Blade Rush (charge through, slashing) | 2 |
+| Sword Beam (laser toward the reticle) | 3 |
 | Climb | Push into glowing vines; jump to kick off |
 
 ## Data and consent

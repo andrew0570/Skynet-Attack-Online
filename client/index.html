@@ -36,7 +36,25 @@
       #player-hud .stamina .bar { height: 6px; }
       #player-hud .stamina.low .label { animation: blink 0.4s steps(2) infinite; }
       @keyframes blink { 50% { opacity: 0.3; } }
-      #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(0,229,255,0.85); box-shadow: 0 0 6px #00e5ff; pointer-events: none; }
+      /* Reticle: ring + ticks + center dot; red when the center ray is on Skynet. */
+      #reticle { position: fixed; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; pointer-events: none; --c: #00e5ff; transition: transform 0.08s; }
+      #reticle::before { content: ''; position: absolute; inset: 0; border: 2px solid var(--c); border-radius: 50%; opacity: 0.8; box-shadow: 0 0 6px var(--c); }
+      #reticle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+      #reticle i { position: absolute; background: var(--c); opacity: 0.9; }
+      #reticle i:nth-child(1) { left: 14px; top: -7px; width: 2px; height: 7px; }
+      #reticle i:nth-child(2) { left: 14px; bottom: -7px; width: 2px; height: 7px; }
+      #reticle i:nth-child(3) { top: 14px; left: -7px; width: 7px; height: 2px; }
+      #reticle i:nth-child(4) { top: 14px; right: -7px; width: 7px; height: 2px; }
+      #reticle.on-target { --c: #ff3b1f; transform: scale(0.85) rotate(45deg); }
+
+      /* Skill bar */
+      #skills { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; gap: 10px; pointer-events: none; }
+      .skill { position: relative; width: 54px; height: 54px; border-radius: 8px; background: rgba(5,12,16,0.65); border: 2px solid rgba(0,229,255,0.35); overflow: hidden; display: grid; place-items: center; }
+      .skill.ready { border-color: #00e5ff; box-shadow: 0 0 10px rgba(0,229,255,0.5); }
+      .skill .icon { font-size: 1.5rem; filter: drop-shadow(0 0 4px #00e5ff); }
+      .skill .key { position: absolute; left: 4px; top: 2px; font-size: 0.7rem; font-weight: 700; color: #9feaff; }
+      .skill .cd { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.65); }
+      .skill .time { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; font-size: 1rem; color: #fff; }
       #vignette { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(255,20,0,0.65) 100%); }
       #result { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(10,4,3,0.6); transition: opacity 0.4s; pointer-events: none; }
       #result h1 { margin: 0; font-size: 3rem; letter-spacing: 0.2em; }
@@ -56,7 +74,12 @@
       <div class="health"><div class="label"><span>HEALTH</span><span id="health-text"></span></div><div class="bar"><div id="player-health"></div></div></div>
       <div class="stamina" id="stamina-row"><div class="label"><span>STAMINA</span><span id="stamina-text"></span></div><div class="bar"><div id="player-stamina"></div></div></div>
     </div>
-    <div id="crosshair"></div>
+    <div id="reticle"><i></i><i></i><i></i><i></i></div>
+    <div id="skills">
+      <div class="skill" id="skill-0"><span class="icon">⚡</span><span class="key">1</span><div class="cd" id="skill-cd-0"></div><div class="time" id="skill-time-0"></div></div>
+      <div class="skill" id="skill-1"><span class="icon">⚔</span><span class="key">2</span><div class="cd" id="skill-cd-1"></div><div class="time" id="skill-time-1"></div></div>
+      <div class="skill" id="skill-2"><span class="icon">✦</span><span class="key">3</span><div class="cd" id="skill-cd-2"></div><div class="time" id="skill-time-2"></div></div>
+    </div>
     <div id="vignette"></div>
     <div id="result" class="hidden"><h1 id="result-title"></h1><p>Press R to fight again</p></div>
     <div id="hud">
@@ -64,6 +87,7 @@
       <p>WASD move · Mouse look · Shift sprint · Space jump (again in air) · Q / Right-click dash · Hold Caps Lock in air to glide</p>
       <p>Sprinting, jumps, and dashes cost stamina (it refills fast) · Armor regenerates, health does not</p>
       <p>Left-click: laser sword (3-hit combo) · Dash through attacks to dodge them</p>
+      <p>Skills (aim with the reticle): 1 Lightning Strike · 2 Blade Rush · 3 Sword Beam</p>
       <p>Skynet's energy bar limits its attacks — strike when it's drained or stunned after a Dive Slam.</p>
       <p>Push into glowing vines to climb · Amber walls shift · Walls block bolts, not mortars · R restart · Esc release mouse</p>
       <p class="start">Click to engage</p>

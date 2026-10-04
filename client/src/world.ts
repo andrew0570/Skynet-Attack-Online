@@ -54,8 +54,8 @@ function createTerrain(): THREE.Mesh {
 
 export interface SkynetVisual {
   group: THREE.Group;
-  /** Flash the core white (call on hit). */
-  flash(): void;
+  /** React to taking damage: white core flash plus a shake scaled by the damage. */
+  hit(damage: number): void;
   /** `pos` is the interpolated sim position; `boss` drives charge/stun/sweep visuals. */
   animate(t: number, dt: number, pos: Vec3, boss: BossState): void;
 }
@@ -72,16 +72,21 @@ export function createSkynet(): SkynetVisual {
   group.scale.setScalar(2);
 
   let flash = 0;
+  let shake = 0;
   let ringSpin = 0;
   const red = new THREE.Color(0xff2200);
   const white = new THREE.Color(0xffffff);
+  // Deterministic-looking jitter from layered sines (no per-frame random pops).
+  const jitter = (t: number, seed: number) => Math.sin(t * 61 + seed) * 0.6 + Math.sin(t * 97 + seed * 2.3) * 0.4;
   return {
     group,
-    flash() {
+    hit(damage) {
       flash = 0.12;
+      shake = Math.min(1, shake + 0.35 + damage / 60);
     },
     animate(t, dt, pos, boss) {
       flash = Math.max(0, flash - dt);
+      shake = Math.max(0, shake - dt * 3);
       const attack = boss.arm >= 0 && ARMS[boss.arm].kind === 'attack' ? (ARMS[boss.arm] as { attack: AttackId }).attack : null;
       const stunned = boss.phase === 'recover' && attack === 'dive';
       const perched = boss.phase === 'idle' || ((boss.phase === 'telegraph' || boss.phase === 'recover') && attack !== 'dive');
@@ -102,7 +107,14 @@ export function createSkynet(): SkynetVisual {
       ring.scale.setScalar(attack === 'sweep' && boss.phase === 'active' ? 1.35 : 1);
 
       core.rotation.set(t * 0.7, t * 1.1, 0);
-      group.position.set(pos.x, pos.y + (perched ? Math.sin(t * 1.5) * 0.6 : 0), pos.z);
+      // Damage shake: jolt the whole construct and wobble its tilt.
+      const s = shake * shake * 1.1;
+      group.position.set(
+        pos.x + jitter(t, 1) * s,
+        pos.y + (perched ? Math.sin(t * 1.5) * 0.6 : 0) + jitter(t, 2) * s * 0.6,
+        pos.z + jitter(t, 3) * s
+      );
+      group.rotation.set(jitter(t, 4) * s * 0.25, 0, jitter(t, 5) * s * 0.25);
     },
   };
 }

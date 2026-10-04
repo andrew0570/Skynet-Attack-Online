@@ -4,8 +4,11 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import {
+  aimRay,
   ARMS,
   BOSS,
+  SKILL_ORDER,
+  SKILLS,
   createFight,
   generateArena,
   heightAt,
@@ -90,6 +93,10 @@ const ui = {
   stamina: el('player-stamina'),
   staminaText: el('stamina-text'),
   staminaRow: el('stamina-row'),
+  reticle: el('reticle'),
+  skillSlot: [0, 1, 2].map(i => el(`skill-${i}`)),
+  skillCd: [0, 1, 2].map(i => el(`skill-cd-${i}`)),
+  skillTime: [0, 1, 2].map(i => el(`skill-time-${i}`)),
   vignette: el('vignette'),
   result: el('result'),
   resultTitle: el('result-title'),
@@ -134,8 +141,17 @@ function readInput(): PlayerInput {
     aimPitch: aim.pitch,
     glide: input.isHeld('CapsLock'),
     attack: input.wasPressed('Mouse0'),
+    skill: input.wasPressed('Digit1') ? 1 : input.wasPressed('Digit2') ? 2 : input.wasPressed('Digit3') ? 3 : 0,
+    // The reticle ray: from the camera through the center of the screen.
+    eyeX: camera.position.x,
+    eyeY: camera.position.y,
+    eyeZ: camera.position.z,
+    lookX: lookDir.x,
+    lookY: lookDir.y,
+    lookZ: lookDir.z,
   };
 }
+const lookDir = new THREE.Vector3(0, 0, -1);
 
 // Debug handle for automated browser tests (tools/browser-test.ts).
 (window as unknown as { __sao: unknown }).__sao = {
@@ -166,6 +182,7 @@ renderer.setAnimationLoop(() => {
   const { dx, dy } = input.takeMouseDelta();
   thirdPerson.rotate(dx, dy);
 
+  camera.getWorldDirection(lookDir);
   accumulator += frameDt;
   while (accumulator >= SIM_DT) {
     Object.assign(prevPos, fight.player.pos);
@@ -174,7 +191,7 @@ renderer.setAnimationLoop(() => {
     fx.handle(events, fight);
     for (const e of events) {
       if (e.type === 'playerHit') hurtFlash = 1;
-      if (e.type === 'bossHit') skynet.flash();
+      if (e.type === 'bossHit') skynet.hit(e.damage);
     }
     input.clearPressed();
     accumulator -= SIM_DT;
@@ -230,6 +247,19 @@ renderer.setAnimationLoop(() => {
   ui.stamina.style.width = `${(player.stamina / STAMINA.max) * 100}%`;
   ui.staminaText.textContent = `${Math.floor(player.stamina)}`;
   ui.staminaRow.classList.toggle('low', player.stamina < STAMINA.dashCost);
+
+  // Skill bar cooldowns.
+  SKILL_ORDER.forEach((id, i) => {
+    const cd = fight.skillCd[i];
+    const total = SKILLS[id].cooldown;
+    ui.skillCd[i].style.height = `${(cd / total) * 100}%`;
+    ui.skillTime[i].textContent = cd > 0 ? cd.toFixed(cd < 1 ? 1 : 0) : '';
+    ui.skillSlot[i].classList.toggle('ready', cd <= 0);
+  });
+
+  // Reticle turns red when it's on Skynet.
+  camera.getWorldDirection(lookDir);
+  ui.reticle.classList.toggle('on-target', aimRay(fight, arena, camera.position, lookDir).hitBoss);
   hurtFlash = Math.max(0, hurtFlash - frameDt * 2.5);
   ui.vignette.style.opacity = String(hurtFlash);
   ui.result.classList.toggle('hidden', fight.outcome === 'active');

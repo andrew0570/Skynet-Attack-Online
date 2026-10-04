@@ -47,6 +47,18 @@ export const SWORD = {
   moveScale: 0.45,
 };
 
+/** Player skills (keys 1/2/3), aimed with the camera's center ray. Cooldown-limited. */
+export const SKILLS = {
+  /** 1 — lightning column strikes the aimed spot (clamped to range) after a short cast. */
+  lightning: { cooldown: 7, castTime: 0.35, minRange: 6, maxRange: 35, radius: 4.5, damage: 80 },
+  /** 2 — charge along the aim, invulnerable, slashing whatever you pass through. */
+  rush: { cooldown: 9, duration: 0.45, speed: 32, hitInterval: 0.075, maxHits: 6, reach: 3.5, damage: 16 },
+  /** 3 — laser projectile from the sword toward the aim point; walls block it. */
+  beam: { cooldown: 2.5, speed: 70, ttl: 1.6, radius: 0.45, damage: 40 },
+};
+export type SkillId = 'lightning' | 'rush' | 'beam';
+export const SKILL_ORDER: SkillId[] = ['lightning', 'rush', 'beam'];
+
 /** Damage hits armor first; overflow goes to health. Armor regenerates, health never does. */
 export const VITALS = {
   health: 100,

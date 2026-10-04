@@ -408,7 +408,18 @@ export function createHero(): Hero {
         trailIndex = p.comboStep;
         trailLife = 0.2;
       }
-      if (p.swingTimer > 0) {
+      if (p.rushing) {
+        // Blade Rush flurry: rapid alternating slashes while charging.
+        const k = (time * 9) % 1;
+        const dir = Math.floor(time * 9) % 2 ? 1 : -1;
+        right.shoulder.rotation.x = -1.4;
+        right.shoulder.rotation.z = dir * (-1.3 + 2.0 * k);
+        right.elbow.rotation.x = -0.1;
+        torso.rotation.y = dir * (-0.5 + k);
+        sword.rotation.set(SWORD_SWING.x, SWORD_SWING.y, 0);
+        trailIndex = dir > 0 ? 0 : 1;
+        trailLife = 0.12;
+      } else if (p.swingTimer > 0) {
         const s = SWINGS[p.comboStep];
         const k = 1 - p.swingTimer / SWORD.swingTime;
         const e = k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k);

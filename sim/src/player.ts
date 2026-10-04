@@ -1,5 +1,5 @@
 import { moverOffset, moverSolid, solidTop, type Arena, type Solid } from './arena';
-import { ARENA_WALK_RADIUS, PLAYER, STAMINA, SWORD } from './config';
+import { ARENA_WALK_RADIUS, PLAYER, SKILLS, STAMINA, SWORD } from './config';
 import { approachAngle, clamp, vec3, type Vec3 } from './math';
 import { heightAt } from './terrain';
 
@@ -21,9 +21,21 @@ export interface PlayerInput {
   glide: boolean;
   /** True only on the tick the attack button was pressed. */
   attack: boolean;
+  /** Skill pressed this tick: 0 = none, 1 = lightning, 2 = blade rush, 3 = sword beam. */
+  skill: number;
+  /** Camera position and unit forward vector (the reticle ray), for aiming skills. */
+  eyeX: number;
+  eyeY: number;
+  eyeZ: number;
+  lookX: number;
+  lookY: number;
+  lookZ: number;
 }
 
-export const NO_INPUT: PlayerInput = { moveX: 0, moveZ: 0, sprint: false, jump: false, dash: false, aimX: 0, aimZ: 0, aimPitch: 0, glide: false, attack: false };
+export const NO_INPUT: PlayerInput = {
+  moveX: 0, moveZ: 0, sprint: false, jump: false, dash: false, aimX: 0, aimZ: 0, aimPitch: 0, glide: false, attack: false,
+  skill: 0, eyeX: 0, eyeY: 0, eyeZ: 0, lookX: 0, lookY: 0, lookZ: -1,
+};
 
 export interface PlayerState {
   pos: Vec3;
@@ -59,6 +71,8 @@ export interface PlayerState {
   swingHit: boolean;
   /** Increments on every new swing (lets the renderer detect swings). */
   swingCount: number;
+  /** Blade Rush in progress (uses the dash motion at rush speed). */
+  rushing: boolean;
   /** Index into arena.movers of the shifting wall being stood on, or -1. */
   mover: number;
 }
@@ -88,6 +102,7 @@ export function createPlayer(x: number, z: number): PlayerState {
     comboWindow: 0,
     swingHit: true,
     swingCount: 0,
+    rushing: false,
     mover: -1,
   };
 }
@@ -111,6 +126,25 @@ function launch(p: PlayerState, dirX: number, dirZ: number, hasMove: boolean, vy
   p.onGround = false;
   p.jumpBuffer = 0;
   p.dashTimer = 0;
+}
+
+/** Start a Blade Rush along `dir` (unit 3D): a fast invulnerable charge using the dash motion. */
+export function startRush(p: PlayerState, dir: Vec3): void {
+  // Same rule as dashes: no charging into the ground from the ground.
+  const d = { ...dir };
+  if (p.onGround && d.y < 0) {
+    const h = Math.hypot(d.x, d.z) || 1;
+    d.x /= h;
+    d.z /= h;
+    d.y = 0;
+  }
+  p.dashDir = d;
+  p.dashTimer = SKILLS.rush.duration;
+  p.invuln = Math.max(p.invuln, SKILLS.rush.duration);
+  p.rushing = true;
+  p.climbing = false;
+  p.gliding = false;
+  if (Math.hypot(d.x, d.z) > 0.1) p.yaw = Math.atan2(d.x, d.z);
 }
 
 /** Spend stamina if there's enough; pauses regeneration. */
@@ -185,6 +219,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
   p.mantle = Math.max(0, p.mantle - dt);
   p.swingTimer = Math.max(0, p.swingTimer - dt);
   p.comboWindow = Math.max(0, p.comboWindow - dt);
+  if (p.dashTimer <= 0) p.rushing = false; // a rush cut short (jump, landing) is over
   if (input.jump) p.jumpBuffer = PLAYER.jumpBuffer;
 
   // Sword swing toward the camera's aim; chains into a 3-hit combo inside the combo window.
@@ -234,6 +269,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.dashDir.y = Math.sin(pitch);
     p.dashDir.z = hz * cp;
     p.climbing = false;
+    p.rushing = false;
     p.dashTimer = PLAYER.dashTime;
     p.dashCooldown = PLAYER.dashCooldown;
     p.invuln = PLAYER.dashInvuln;
@@ -282,8 +318,9 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
 
   if (p.dashTimer > 0) {
     p.dashTimer -= dt;
-    // Full speed during the dash, then carry sprint-speed momentum along the dash direction.
-    const speed = p.dashTimer > 0 ? PLAYER.dashSpeed : PLAYER.sprintSpeed;
+    // Full speed during the dash (or rush), then carry sprint-speed momentum along it.
+    const speed = p.dashTimer > 0 ? (p.rushing ? SKILLS.rush.speed : PLAYER.dashSpeed) : PLAYER.sprintSpeed;
+    if (p.dashTimer <= 0) p.rushing = false;
     p.vel.x = p.dashDir.x * speed;
     p.vel.y = p.dashDir.y * speed;
     p.vel.z = p.dashDir.z * speed;

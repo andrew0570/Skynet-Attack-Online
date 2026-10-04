@@ -1,7 +1,7 @@
 import { raycast, type Arena } from './arena';
-import { HURT_INVULN, PLAYER, SWORD, VITALS } from './config';
+import { HURT_INVULN, PLAYER, SKILLS, SWORD, VITALS } from './config';
 import { clamp, vec3, type Vec3 } from './math';
-import { createPlayer, stepPlayer, type PlayerInput, type PlayerState } from './player';
+import { createPlayer, startRush, stepPlayer, type PlayerInput, type PlayerState } from './player';
 import { mulberry32, type Rng } from './rng';
 import { heightAt } from './terrain';
 
@@ -132,7 +132,20 @@ export type FightEvent =
   | { type: 'dodged'; pos: Vec3 }
   | { type: 'bossHit'; damage: number; stunned: boolean }
   | { type: 'won' }
-  | { type: 'lost' };
+  | { type: 'lost' }
+  | { type: 'lightningCast'; pos: Vec3 }
+  | { type: 'lightning'; pos: Vec3; hit: boolean }
+  | { type: 'rush' }
+  | { type: 'beamFired'; from: Vec3 }
+  | { type: 'beamImpact'; pos: Vec3; hitBoss: boolean };
+
+/** Player's sword-beam projectile. */
+export interface PlayerShot {
+  id: number;
+  pos: Vec3;
+  vel: Vec3;
+  ttl: number;
+}
 
 export interface FightState {
   time: number;
@@ -152,6 +165,14 @@ export interface FightState {
   /** Which side (+1/-1, relative to Skynet's line of fire) the player dashed to most recently. */
   dodgeSide: number;
   decisions: Decision[];
+  /** Seconds left on each skill's cooldown, in SKILL_ORDER (lightning, rush, beam). */
+  skillCd: number[];
+  /** Lightning strike waiting to land. */
+  lightning: { pos: Vec3; timer: number } | null;
+  /** Blade Rush hit cadence. */
+  rushHitTimer: number;
+  rushHits: number;
+  shots: PlayerShot[];
 }
 
 /** Picks an arm index from `valid` (all valid for the current state). */
@@ -176,6 +197,11 @@ export function createFight(arena: Arena, seed = 1): FightState {
     rng: mulberry32(seed),
     dodgeSide: 1,
     decisions: [],
+    skillCd: [0, 0, 0],
+    lightning: null,
+    rushHitTimer: 0,
+    rushHits: 0,
+    shots: [],
   };
 }
 
@@ -559,6 +585,170 @@ function stepSword(f: FightState, events: FightEvent[]): void {
   damageBoss(f, SWORD.damage[p.comboStep], events);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Player skills
+// ---------------------------------------------------------------------------------------------
+
+const AIM_RANGE = 150;
+
+/** Distance along a ray (unit dir) to a sphere, or Infinity. */
+function raySphere(o: Vec3, d: Vec3, c: Vec3, r: number): number {
+  const ox = o.x - c.x;
+  const oy = o.y - c.y;
+  const oz = o.z - c.z;
+  const b = ox * d.x + oy * d.y + oz * d.z;
+  const cc = ox * ox + oy * oy + oz * oz - r * r;
+  const disc = b * b - cc;
+  if (disc < 0) return Infinity;
+  const t = -b - Math.sqrt(disc);
+  return t >= 0 ? t : cc <= 0 ? 0 : Infinity;
+}
+
+/**
+ * What the reticle points at: the first of Skynet, walls/roofs, or terrain along the camera's
+ * center ray (from `eye` along unit `look`). Falls back to a far point if it hits nothing.
+ */
+export function aimRay(f: FightState, arena: Arena, eye: Vec3, look: Vec3): { point: Vec3; hitBoss: boolean; dist: number } {
+  const dir = norm(look);
+  let best = AIM_RANGE;
+  let hitBoss = false;
+  const tBoss = raySphere(eye, dir, f.boss.pos, BOSS.radius);
+  if (tBoss < best) {
+    best = tBoss;
+    hitBoss = true;
+  }
+  const tSolid = raycast(arena, eye, add(eye, dir, AIM_RANGE), f.time) * AIM_RANGE;
+  if (tSolid < best) {
+    best = tSolid;
+    hitBoss = false;
+  }
+  // Terrain: march, then bisect.
+  for (let t = 1; t < best; t += 1) {
+    const q = add(eye, dir, t);
+    if (q.y <= heightAt(q.x, q.z)) {
+      let lo = t - 1;
+      let hi = t;
+      for (let i = 0; i < 8; i++) {
+        const mid = (lo + hi) / 2;
+        const m = add(eye, dir, mid);
+        if (m.y <= heightAt(m.x, m.z)) hi = mid;
+        else lo = mid;
+      }
+      best = hi;
+      hitBoss = false;
+      break;
+    }
+  }
+  return { point: add(eye, dir, best), hitBoss, dist: best };
+}
+
+function castLightning(f: FightState, arena: Arena, eye: Vec3, look: Vec3, events: FightEvent[]): void {
+  const p = f.player;
+  const L = SKILLS.lightning;
+  const aim = aimRay(f, arena, eye, look);
+  // Strike column under the aim point, clamped to medium range in front of the player.
+  let tx = aim.point.x - p.pos.x;
+  let tz = aim.point.z - p.pos.z;
+  let d = Math.hypot(tx, tz);
+  if (d < 1e-3) {
+    tx = look.x;
+    tz = look.z;
+    d = Math.hypot(tx, tz) || 1;
+    tx = (tx / d) * L.minRange;
+    tz = (tz / d) * L.minRange;
+    d = L.minRange;
+  }
+  const r = clamp(d, L.minRange, L.maxRange);
+  const x = p.pos.x + (tx / d) * r;
+  const z = p.pos.z + (tz / d) * r;
+  const inRange = r === d;
+  const y = inRange && !aim.hitBoss ? Math.max(heightAt(x, z), aim.point.y) : heightAt(x, z);
+  f.lightning = { pos: { x, y, z }, timer: L.castTime };
+  events.push({ type: 'lightningCast', pos: { x, y, z } });
+}
+
+function strikeLightning(f: FightState, events: FightEvent[]): void {
+  const L = SKILLS.lightning;
+  const pos = f.lightning!.pos;
+  f.lightning = null;
+  // A vertical column from the sky: hits Skynet anywhere above the strike point.
+  const b = f.boss.pos;
+  const hit = Math.hypot(b.x - pos.x, b.z - pos.z) <= L.radius + BOSS.radius * 0.5 && b.y >= pos.y - 2;
+  events.push({ type: 'lightning', pos, hit });
+  if (hit) damageBoss(f, L.damage, events);
+}
+
+function fireBeam(f: FightState, arena: Arena, eye: Vec3, look: Vec3, events: FightEvent[]): void {
+  const p = f.player;
+  const B = SKILLS.beam;
+  // Leaves from the sword hand (right side, chest height) toward the reticle point.
+  const right = { x: -Math.cos(p.yaw), z: Math.sin(p.yaw) };
+  const from = { x: p.pos.x + right.x * 0.45, y: p.pos.y + 1.2, z: p.pos.z + right.z * 0.45 };
+  const target = aimRay(f, arena, eye, look).point;
+  const dir = norm(sub(target, from));
+  f.shots.push({ id: f.nextId++, pos: from, vel: add(vec3(), dir, B.speed), ttl: B.ttl });
+  // Face the shot.
+  if (Math.hypot(dir.x, dir.z) > 0.1) p.yaw = Math.atan2(dir.x, dir.z);
+  events.push({ type: 'beamFired', from });
+}
+
+function stepSkills(f: FightState, arena: Arena, input: PlayerInput, dt: number, events: FightEvent[]): void {
+  const p = f.player;
+  for (let i = 0; i < 3; i++) f.skillCd[i] = Math.max(0, f.skillCd[i] - dt);
+  const eye = { x: input.eyeX, y: input.eyeY, z: input.eyeZ };
+  const look = { x: input.lookX, y: input.lookY, z: input.lookZ };
+  const k = input.skill - 1;
+  if (k >= 0 && k < 3 && f.skillCd[k] <= 0 && !p.climbing) {
+    if (k === 0) castLightning(f, arena, eye, look, events);
+    if (k === 1) {
+      startRush(p, norm(look));
+      f.rushHitTimer = 0;
+      f.rushHits = 0;
+      events.push({ type: 'rush' });
+    }
+    if (k === 2) fireBeam(f, arena, eye, look, events);
+    f.skillCd[k] = [SKILLS.lightning.cooldown, SKILLS.rush.cooldown, SKILLS.beam.cooldown][k];
+  }
+
+  if (f.lightning) {
+    f.lightning.timer -= dt;
+    if (f.lightning.timer <= 0) strikeLightning(f, events);
+  }
+
+  // Blade Rush: slash anything within reach along the charge, on a fixed cadence.
+  if (p.rushing) {
+    f.rushHitTimer -= dt;
+    if (f.rushHitTimer <= 0 && f.rushHits < SKILLS.rush.maxHits && len(sub(f.boss.pos, playerChest(p))) <= SKILLS.rush.reach + BOSS.radius) {
+      damageBoss(f, SKILLS.rush.damage, events);
+      f.rushHits++;
+      f.rushHitTimer = SKILLS.rush.hitInterval;
+    }
+  }
+
+  // Sword beams: hit Skynet (segment vs sphere), walls, or terrain.
+  const keep: PlayerShot[] = [];
+  for (const s of f.shots) {
+    s.ttl -= dt;
+    const next = add(s.pos, s.vel, dt);
+    const seg = sub(next, s.pos);
+    const segLen = len(seg);
+    const tb = raySphere(s.pos, norm(seg), f.boss.pos, BOSS.radius + SKILLS.beam.radius);
+    const tw = raycast(arena, s.pos, next, f.time) * segLen;
+    if (tb <= segLen && tb <= tw) {
+      events.push({ type: 'beamImpact', pos: add(s.pos, norm(seg), tb), hitBoss: true });
+      damageBoss(f, SKILLS.beam.damage, events);
+      continue;
+    }
+    if (tw < segLen || next.y <= heightAt(next.x, next.z)) {
+      events.push({ type: 'beamImpact', pos: tw < segLen ? add(s.pos, norm(seg), tw) : next, hitBoss: false });
+      continue;
+    }
+    s.pos = next;
+    if (s.ttl > 0) keep.push(s);
+  }
+  f.shots = keep;
+}
+
 /** Advance the whole fight one tick. Deterministic given the same inputs, seed, and brain. */
 export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: number, brain: Brain): FightEvent[] {
   const events: FightEvent[] = [];
@@ -577,6 +767,7 @@ export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: n
   if (f.armorDelay <= 0 && f.outcome === 'active') f.armor = Math.min(VITALS.armor, f.armor + VITALS.armorRegen * dt);
   if (f.outcome === 'active') {
     stepSword(f, events);
+    stepSkills(f, arena, input, dt, events);
     stepBoss(f, arena, dt, brain, events);
   }
   stepProjectiles(f, arena, dt, events);

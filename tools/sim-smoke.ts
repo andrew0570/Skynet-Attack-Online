@@ -20,6 +20,7 @@ import {
   mulberry32,
   NO_INPUT,
   PLAYER,
+  SKILLS,
   raycast,
   SIM_DT,
   solidTop,
@@ -329,6 +330,38 @@ const win = runFight(1, (_f, t) => ({ attack: t === 0, aimZ: -1 }), { setup: f =
 check('defeating Skynet wins the fight', win.f.outcome === 'won' && win.events.some(e => e.type === 'won'));
 const lose = runFight(30, () => ({}), { setup: f => { f.health = 1; f.armor = 0; } });
 check('running out of HP loses the fight', lose.f.outcome === 'lost' && lose.events.some(e => e.type === 'lost'));
+
+// ---------- Skills ----------
+const calm = (f: Fight) => (f.boss.cooldown = 1e9);
+/** Camera 6 m behind and 3 m above the player, looking at `target`. */
+const lookAt = (f: Fight, target: { x: number; y: number; z: number }) => {
+  const eye = { x: f.player.pos.x, y: f.player.pos.y + 3, z: f.player.pos.z + 6 };
+  const d = { x: target.x - eye.x, y: target.y - eye.y, z: target.z - eye.z };
+  const l = Math.hypot(d.x, d.y, d.z);
+  return { eyeX: eye.x, eyeY: eye.y, eyeZ: eye.z, lookX: d.x / l, lookY: d.y / l, lookZ: d.z / l };
+};
+const placeAt = (z: number) => (f: Fight) => {
+  calm(f);
+  f.player.pos = { x: 0, y: heightAt(0, z), z };
+};
+const bolt = runFight(1, (f, t) => ({ ...lookAt(f, f.boss.pos), skill: t === 0 ? 1 : 0 }), { setup: placeAt(24) });
+check('lightning (1) strikes Skynet on its perch when aimed at it', bolt.f.boss.hp === BOSS.maxHp - SKILLS.lightning.damage && bolt.events.some(e => e.type === 'lightning' && e.hit),
+  `Skynet HP ${bolt.f.boss.hp}`);
+const boltMiss = runFight(1, (f, t) => ({ ...lookAt(f, { x: 30, y: 0, z: 10 }), skill: t === 0 ? 1 : 0 }), { setup: placeAt(24) });
+const missPos = boltMiss.events.find(e => e.type === 'lightning');
+check('lightning aimed away misses, lands within range', boltMiss.f.boss.hp === BOSS.maxHp && missPos?.type === 'lightning' && Math.hypot(missPos.pos.x, missPos.pos.z - 24) <= SKILLS.lightning.maxRange + 1e-6);
+const beam = runFight(2, (f, t) => ({ ...lookAt(f, f.boss.pos), skill: t === 0 ? 3 : 0 }), { setup: placeAt(40) });
+check('sword beam (3) hits Skynet', beam.f.boss.hp === BOSS.maxHp - SKILLS.beam.damage && beam.events.some(e => e.type === 'beamImpact' && e.hitBoss), `Skynet HP ${beam.f.boss.hp}`);
+const beamWall = runFight(2, (f, t) => ({ ...lookAt(f, f.boss.pos), skill: t === 0 ? 3 : 0 }), { arena: coverArena, setup: f => { calm(f); } });
+check('sword beam is blocked by walls', beamWall.f.boss.hp === BOSS.maxHp && beamWall.events.some(e => e.type === 'beamImpact' && !e.hitBoss));
+const spamBeam = runFight(2, (f, t) => ({ ...lookAt(f, f.boss.pos), skill: t % 20 === 0 ? 3 : 0 }), { setup: placeAt(40) });
+check('skill cooldowns stop spamming (beam 2.5 s)', spamBeam.events.filter(e => e.type === 'beamFired').length === 1);
+let bossZ = 0;
+const rush = runFight(1.2, (f, t) => ({ eyeX: 0, eyeY: 0, eyeZ: 0, lookX: 0, lookY: 0, lookZ: -1, skill: t === 0 ? 2 : 0 }), {
+  setup: f => { placeAt(40)(f); f.boss.pos = { x: 0, y: f.player.pos.y + 1.1, z: 32 }; bossZ = 32; },
+});
+const rushHits = rush.events.filter(e => e.type === 'bossHit').length;
+check('blade rush (2) slashes through Skynet', rushHits >= 3 && rush.f.player.pos.z < bossZ - 3, `${rushHits} hits, ended at z=${rush.f.player.pos.z.toFixed(1)} (Skynet at ${bossZ})`);
 
 const runA = runFight(20, (_f, t) => ({ moveX: Math.sin(t / 40), moveZ: -1, dash: t % 50 === 0, aimZ: -1 }));
 const runB = runFight(20, (_f, t) => ({ moveX: Math.sin(t / 40), moveZ: -1, dash: t % 50 === 0, aimZ: -1 }));

@@ -53,6 +53,29 @@ await holdW(2500);
 const s3 = await state();
 results.push(['moves after pressing R', dist(s2.pos, s3.pos) > 1, `moved ${dist(s2.pos, s3.pos).toFixed(2)} m, sim t=${s2.time.toFixed(2)}→${s3.time.toFixed(2)}, onGround=${s3.onGround}, outcome=${s3.outcome}`]);
 
+// Skills: from the glade, looking up at Skynet, press 1 / 3 / 2 and check each fires.
+if (process.env.SAO_SKILLS === '1') {
+  await page.goto('http://localhost:5173/?peace&shot&at=0,26&pitch=-0.45');
+  await page.waitForFunction('window.__sao && window.__sao.fight', { timeout: 60000 });
+  const skillState = () =>
+    page.evaluate(() => {
+      const f = (window as unknown as { __sao: { fight: { skillCd: number[]; boss: { hp: number } } } }).__sao.fight;
+      return { cd: [...f.skillCd], hp: f.boss.hp };
+    });
+  const shotDir = process.env.SAO_SHOTS;
+  const hp0 = (await skillState()).hp;
+  for (const [key, idx, name] of [['Digit1', 0, 'lightning'], ['Digit3', 2, 'beam'], ['Digit2', 1, 'rush']] as const) {
+    await page.keyboard.press(key);
+    await wait(name === 'lightning' ? 700 : 250);
+    if (shotDir) await page.screenshot({ path: `${shotDir}/skill-${name}.png` });
+    const s = await skillState();
+    results.push([`skill ${key.slice(-1)} (${name}) fires and goes on cooldown`, s.cd[idx] > 0, `cooldown ${s.cd[idx].toFixed(1)} s`]);
+  }
+  await wait(1500);
+  const hp1 = (await skillState()).hp;
+  results.push(['skills damaged Skynet (aimed from the glade)', hp1 < hp0, `Skynet HP ${hp0} → ${hp1}`]);
+}
+
 for (const [name, ok, detail] of results) console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}  (${detail})`);
 if (errors.length) console.log('page errors:', errors.slice(0, 5));
 await browser.close();

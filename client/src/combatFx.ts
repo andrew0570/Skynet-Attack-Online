@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ARMS, ATTACKS, heightAt, type FightEvent, type FightState, type ProjectileKind, type Vec3 } from '@sao/sim';
+import { ARMS, ATTACKS, heightAt, SKILLS, type FightEvent, type FightState, type ProjectileKind, type Vec3 } from '@sao/sim';
 
 // Skynet's attacks read as red/orange; the player's sword and dodges as cyan.
 const hdr = (r: number, g: number, b: number, k: number) => new THREE.Color(r, g, b).multiplyScalar(k);
@@ -11,6 +11,10 @@ const PROJECTILE_LOOK: Record<ProjectileKind, { geo: THREE.BufferGeometry; mat: 
   orb: { geo: new THREE.IcosahedronGeometry(0.6, 1), mat: new THREE.MeshBasicMaterial({ color: hdr(1, 0.1, 0.45, 5) }) },
   shell: { geo: new THREE.SphereGeometry(0.5, 10, 8), mat: new THREE.MeshBasicMaterial({ color: hdr(1, 0.5, 0.1, 5) }) },
 };
+
+/** Sword beam: a long cyan lance oriented along its velocity (+Z). */
+const BEAM_GEO = new THREE.CylinderGeometry(0.16, 0.16, 3.2, 8).rotateX(Math.PI / 2);
+const BEAM_MAT = new THREE.MeshBasicMaterial({ color: hdr(0.4, 1, 1, 6) });
 
 interface Effect {
   obj: THREE.Object3D;
@@ -141,8 +145,73 @@ export function createCombatFx(scene: THREE.Scene): CombatFx {
         case 'bossHit':
           burst(fight.boss.pos, 2.2, e.stunned ? hdr(0.6, 1, 1, 3) : hdr(0, 0.9, 1, 2.5), 0.18);
           break;
+        case 'lightningCast':
+          lightningGlyph(e.pos);
+          break;
+        case 'lightning':
+          lightningBolt(e.pos);
+          fx.shake = Math.max(fx.shake, 0.45);
+          break;
+        case 'beamFired':
+          burst(e.from, 0.8, hdr(0.4, 1, 1, 4), 0.15);
+          break;
+        case 'beamImpact':
+          burst(e.pos, e.hitBoss ? 2 : 1.2, hdr(0.3, 1, 1, e.hitBoss ? 4 : 2.5), 0.25);
+          break;
+        case 'rush':
+          fx.shake = Math.max(fx.shake, 0.2);
+          break;
       }
     }
+  }
+
+  /** Cyan target glyph on the ground while a lightning strike charges. */
+  function lightningGlyph(at: Vec3): void {
+    const mat = additive(hdr(0.3, 0.9, 1, 3), 0.9);
+    const g = new THREE.Group();
+    const outer = new THREE.Mesh(ringGeo, mat);
+    const inner = new THREE.Mesh(ringGeo, mat);
+    inner.scale.setScalar(0.55);
+    g.add(outer, inner);
+    g.position.set(at.x, at.y + 0.1, at.z);
+    g.scale.setScalar(SKILLS.lightning.radius);
+    add(g, SKILLS.lightning.castTime, k => {
+      inner.scale.setScalar(0.55 + 0.45 * (1 - k));
+      g.rotation.y += 0.15;
+      mat.opacity = 0.5 + 0.5 * Math.sin((1 - k) * 40);
+    });
+  }
+
+  /** Jagged lightning column from the sky down to the strike point. */
+  function lightningBolt(at: Vec3): void {
+    const path = new THREE.CurvePath<THREE.Vector3>();
+    const top = at.y + 70;
+    let prev = new THREE.Vector3(at.x + (Math.random() - 0.5) * 6, top, at.z + (Math.random() - 0.5) * 6);
+    const steps = 14;
+    for (let i = 1; i <= steps; i++) {
+      const k = i / steps;
+      const spread = i === steps ? 0 : 2.2 * (1 - k * 0.6);
+      const next = new THREE.Vector3(
+        at.x + (Math.random() - 0.5) * spread,
+        top + (at.y - top) * k,
+        at.z + (Math.random() - 0.5) * spread
+      );
+      path.add(new THREE.LineCurve3(prev, next));
+      prev = next;
+    }
+    const core = new THREE.Mesh(new THREE.TubeGeometry(path, steps * 2, 0.22, 5, false), new THREE.MeshBasicMaterial({ color: hdr(0.8, 0.95, 1, 8), transparent: true }));
+    const glowMat = additive(hdr(0.3, 0.8, 1, 2), 0.45);
+    const glow = new THREE.Mesh(new THREE.TubeGeometry(path, steps * 2, 0.9, 6, false), glowMat);
+    const g = new THREE.Group();
+    g.add(core, glow);
+    add(g, 0.3, k => {
+      // Flicker, then fade.
+      const on = k > 0.5 ? (Math.random() > 0.3 ? 1 : 0.2) : k * 2;
+      (core.material as THREE.MeshBasicMaterial).opacity = on;
+      glowMat.opacity = 0.45 * on;
+    });
+    shockwave(at, SKILLS.lightning.radius * 1.6, hdr(0.3, 0.9, 1, 4), 0.45);
+    burst({ ...at, y: at.y + 1 }, 3, hdr(0.5, 0.95, 1, 4), 0.3);
   }
 
   function update(fight: FightState, dt: number, time: number): void {
@@ -167,6 +236,18 @@ export function createCombatFx(scene: THREE.Scene): CombatFx {
         mesh.scale.setScalar(1 + 0.25 * Math.sin(time * 14 + p.id));
         mesh.rotation.set(time * 3, time * 2, 0);
       }
+    }
+    // The player's sword beams share the map (ids are unique across both lists).
+    for (const s of fight.shots) {
+      live.add(s.id);
+      let mesh = projectiles.get(s.id);
+      if (!mesh) {
+        mesh = new THREE.Mesh(BEAM_GEO, BEAM_MAT);
+        projectiles.set(s.id, mesh);
+        root.add(mesh);
+      }
+      mesh.position.set(s.pos.x, s.pos.y, s.pos.z);
+      mesh.lookAt(s.pos.x + s.vel.x, s.pos.y + s.vel.y, s.pos.z + s.vel.z);
     }
     for (const [id, mesh] of projectiles) {
       if (!live.has(id)) {
