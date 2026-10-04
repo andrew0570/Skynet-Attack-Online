@@ -1,11 +1,4 @@
-type KeyboardLock = { lock(keys?: string[]): Promise<void>; unlock(): void };
-
-/**
- * Keyboard + pointer-locked mouse. Press events persist until a sim tick consumes them.
- *
- * Engaging also enters fullscreen with the Keyboard Lock API, because Ctrl is the glide key and
- * browsers otherwise reserve shortcuts like Ctrl+W (close tab) — fatal mid-glide while holding W.
- */
+/** Keyboard + pointer-locked mouse. Press events persist until a sim tick consumes them. */
 export class Input {
   private held = new Set<string>();
   private pressed = new Set<string>();
@@ -15,11 +8,8 @@ export class Input {
 
   constructor(private target: HTMLElement) {
     window.addEventListener('keydown', e => {
-      if (this.locked) {
-        // Swallow browser shortcuts (Ctrl+S, Ctrl+D, ...) while playing.
-        e.preventDefault();
-        if (e.code === 'Escape') this.disengage();
-      }
+      // Swallow browser shortcuts while playing (Esc still releases pointer lock natively).
+      if (this.locked) e.preventDefault();
       if (!e.repeat) this.pressed.add(e.code);
       this.held.add(e.code);
     });
@@ -27,7 +17,7 @@ export class Input {
     window.addEventListener('blur', () => this.held.clear());
     target.addEventListener('mousedown', e => {
       if (!this.locked) {
-        this.engage();
+        target.requestPointerLock();
         return;
       }
       this.pressed.add(`Mouse${e.button}`);
@@ -44,23 +34,6 @@ export class Input {
       this.mouseDX += e.movementX;
       this.mouseDY += e.movementY;
     });
-  }
-
-  private engage(): void {
-    const keyboard = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
-    document.documentElement
-      .requestFullscreen?.()
-      .then(() => keyboard?.lock())
-      .catch(() => {
-        /* fullscreen/keyboard lock unavailable: game still works, Ctrl+W just isn't capturable */
-      });
-    this.target.requestPointerLock();
-  }
-
-  private disengage(): void {
-    (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard?.unlock();
-    document.exitPointerLock();
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }
 
   isHeld(code: string): boolean {

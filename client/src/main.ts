@@ -11,7 +11,8 @@ import { Input } from './input';
 import { createSkynet, createWorld } from './world';
 
 // Debug view options for screenshots: ?front (camera faces the hero), ?yaw=<radians>, ?close,
-// ?shot (hide overlay), ?overview (high fixed camera over the arena), ?at=x,z (spawn point).
+// ?shot (hide overlay), ?overview (high fixed camera over the arena), ?at=x,z (spawn point),
+// ?glide (force the glide pose, to inspect the wings).
 const params = new URLSearchParams(location.search);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -82,7 +83,7 @@ function readInput(): PlayerInput {
     aimX: aim.x,
     aimZ: aim.z,
     aimPitch: aim.pitch,
-    glide: input.isHeld('ControlLeft') || input.isHeld('ControlRight'),
+    glide: input.isHeld('CapsLock'),
   };
 }
 
@@ -121,7 +122,7 @@ renderer.setAnimationLoop(() => {
   };
   hero.group.position.set(renderPos.x, renderPos.y, renderPos.z);
   hero.group.rotation.y = player.yaw;
-  hero.update(player, frameDt, elapsed);
+  hero.update(params.has('glide') ? { ...player, gliding: true } : player, frameDt, elapsed);
 
   // Shadow sits on whatever is directly below: terrain, a wall top, or a platform.
   const below = raycast(arena, { x: renderPos.x, y: renderPos.y + 0.1, z: renderPos.z }, { x: renderPos.x, y: renderPos.y - 60, z: renderPos.z }, renderTime);

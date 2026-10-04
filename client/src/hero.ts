@@ -30,6 +30,10 @@ const FLAME = new THREE.MeshBasicMaterial({
   depthWrite: false,
 });
 const GLOWS: [THREE.MeshBasicMaterial, THREE.Color][] = [SEAM, VISOR, CORE].map(m => [m, m.color.clone()]);
+/** Wing edge glow: dim when folded, powers up as the wings deploy. */
+const WING_GLOW = glow(0.6);
+const WING_GLOW_FOLDED = 0.6;
+const WING_GLOW_OPEN = 3.2;
 
 function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -83,6 +87,50 @@ function createArm(side: 1 | -1): Arm & { hand: THREE.Group } {
     elbow
   );
   return { shoulder, elbow, hand };
+}
+
+interface Wing {
+  root: THREE.Group;
+  blades: { pivot: THREE.Group; openAngle: number }[];
+  side: 1 | -1;
+}
+
+const BLADES = [
+  { at: 0.25, length: 1.1, open: -0.15 },
+  { at: 0.6, length: 0.95, open: 0.12 },
+  { at: 0.95, length: 0.8, open: 0.38 },
+  { at: 1.3, length: 0.6, open: 0.62 },
+];
+const SPAR_LENGTH = 1.45;
+/** Root roll: folded, the spars rise in a V behind the shoulders; open, they sweep out level. */
+const WING_ROOT_FOLDED = Math.PI / 2 - 0.35;
+const WING_ROOT_OPEN = 0.22;
+/** Blades folded flat along the spar. */
+const BLADE_FOLDED = Math.PI / 2 - 0.08;
+
+/**
+ * Cybernetic wing in the torso's back plane (x = outward, -y = toward the hips): a metal spar
+ * with four blades hanging off it, each with a glowing outer edge. `side` 1 = left (+X).
+ */
+function createWing(side: 1 | -1): Wing {
+  const root = new THREE.Group();
+  root.position.set(side * 0.13, 0.52, -0.28);
+  const spar = box(SPAR_LENGTH, 0.07, 0.06, ARMOR_LIGHT, (side * SPAR_LENGTH) / 2, 0, 0);
+  const sparGlow = box(SPAR_LENGTH * 0.9, 0.02, 0.02, WING_GLOW, (side * SPAR_LENGTH) / 2, 0.045, 0);
+  root.add(spar, sparGlow);
+  const blades = BLADES.map(b => {
+    const pivot = new THREE.Group();
+    pivot.position.x = side * b.at;
+    // Blade hangs along -Y from the spar; outer edge glows.
+    pivot.add(
+      box(0.13, b.length, 0.025, ARMOR, 0, -b.length / 2, 0),
+      box(0.025, b.length * 0.95, 0.03, WING_GLOW, side * 0.065, -b.length / 2, 0),
+      box(0.13, 0.025, 0.03, WING_GLOW, 0, -b.length, 0)
+    );
+    root.add(pivot);
+    return { pivot, openAngle: b.open };
+  });
+  return { root, blades, side };
 }
 
 interface Leg {
@@ -163,8 +211,11 @@ export function createHero(): Hero {
   coreGem.rotation.x = Math.PI / 2;
   coreGem.position.set(0, 0.38, 0.16);
 
+  const wings = [createWing(1), createWing(-1)];
+
   const torso = joint(
     0, 0.08, 0,
+    ...wings.map(w => w.root),
     box(0.3, 0.2, 0.2, SUIT, 0, 0.12, 0),
     box(0.5, 0.32, 0.28, ARMOR, 0, 0.36, 0.01),
     coreGem,
@@ -193,6 +244,7 @@ export function createHero(): Hero {
     hip: [0, 0], knee: [0, 0], shoulderX: [0, 0], shoulderZ: [0, 0], elbow: [0, 0], thrust: 0,
   };
   let phase = 0;
+  let wingOpen = 0;
   let flipT = 0;
   let landT = 0;
   let prevAirJumps = PLAYER.airJumps;
@@ -310,6 +362,21 @@ export function createHero(): Hero {
         arms[i].shoulder.rotation.z = cur.shoulderZ[i];
         arms[i].elbow.rotation.x = cur.elbow[i];
       }
+
+      // Wings: unfold fast when a glide starts, fold a bit slower after.
+      const wingTarget = p.gliding ? 1 : 0;
+      wingOpen += (wingTarget - wingOpen) * (1 - Math.exp(-dt * (wingTarget ? 12 : 7)));
+      const e = wingOpen * wingOpen * (3 - 2 * wingOpen);
+      const flutter = Math.sin(time * 3.1) * 0.05 * e;
+      for (const w of wings) {
+        w.root.rotation.z = w.side * (WING_ROOT_FOLDED + (WING_ROOT_OPEN - WING_ROOT_FOLDED) * e + flutter);
+        // Folded wings tuck slightly against the backpack.
+        w.root.rotation.y = w.side * 0.25 * (1 - e);
+        w.blades.forEach((b, i) => {
+          b.pivot.rotation.z = w.side * (BLADE_FOLDED + (b.openAngle - BLADE_FOLDED) * e + flutter * (i + 1) * 0.4);
+        });
+      }
+      WING_GLOW.color.copy(CYAN).multiplyScalar(WING_GLOW_FOLDED + (WING_GLOW_OPEN - WING_GLOW_FOLDED) * e);
 
       const flicker = 0.85 + 0.15 * Math.sin(time * 60);
       flameGroup.scale.set(1, Math.max(0.05, cur.thrust * flicker), 1);
