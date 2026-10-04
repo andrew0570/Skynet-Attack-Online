@@ -72,7 +72,10 @@ Playtest verdict on round 2: smarter, but not visibly *adapting to you*. Added a
 profile (8 habit features → 29 total), mobility (hunt / flank / rise / retreat), four style
 counters (Reflect Shield, Feint, Hunter Drones, Sweeping Laser) → 25 arms, a sniper bot,
 decision explanations + "read on you" panel + callouts + Tab "what Skynet learned" panel, and
-a per-style "how Skynet adapted" chart in the training report. Round 3: 1500 fights from v0.
+a per-style "how Skynet adapted" chart in the training report. Round 3: 1500 fights from v0
+→ brain v1500, 0 rejected. Skynet win rate 15% → 49% (first vs last 150). Learned counters:
+vs hider (camper) Hunter Drones 19% → 70% of actions, wins 17% → 70%; vs kiter/aggressor
+Reflect Shield 17–20% → 45%; vs sniper Seeker Orbs + Sweeping Laser, wins 53% → 97%.
 Design: docs/design.md §2d.
 
 ## Sleep · ~3:30 → 8:00 AM
