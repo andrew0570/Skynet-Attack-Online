@@ -35,7 +35,8 @@ import { createSkynet, createWorld } from './world';
 // Debug view options for screenshots: ?front (camera faces the hero), ?yaw=<radians>, ?close,
 // ?shot (hide overlay), ?overview (high fixed camera over the arena), ?at=x,z (spawn point),
 // ?glide (force the glide pose, to inspect the wings), ?peace (Skynet never attacks),
-// ?pitch=<radians>, ?t=<seconds> (fast-forward the fight).
+// ?pitch=<radians>, ?t=<seconds> (fast-forward the fight), ?notrain (fight the shared brain
+// without submitting fights to train it).
 const params = new URLSearchParams(location.search);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -167,7 +168,8 @@ function startFight(): void {
 
 /** Send a finished (or abandoned) fight to train the shared brain. */
 function submitFight(outcome: FightSubmission['outcome']): void {
-  if (submitted || fightPolicyVersion < 0 || net.status.consented !== true) return;
+  // ?notrain: play against the shared brain without teaching it (for testing a model version).
+  if (submitted || fightPolicyVersion < 0 || net.status.consented !== true || params.has('notrain')) return;
   if (outcome === 'abandoned' && fight.time < 10) return;
   submitted = true;
   resolveDecisions(fight, true);
@@ -253,7 +255,10 @@ renderer.setAnimationLoop(() => {
   const running = input.locked || params.has('autoplay') || params.has('shot');
   accumulator = running ? accumulator + frameDt : 0;
   while (accumulator >= SIM_DT) {
-    if (!fightStarted) startFight();
+    // Freeze the brain at the first tick; if that happened before the shared brain connected,
+    // upgrade as long as Skynet hasn't made a decision yet (~2 s into every fight).
+    const upgrade = fightStarted && fightPolicyVersion < 0 && fight.decisions.length === 0 && !params.has('peace') && net.status.connected;
+    if (!fightStarted || upgrade) startFight();
     Object.assign(prevPos, fight.player.pos);
     Object.assign(prevBoss, fight.boss.pos);
     const events = stepFight(fight, arena, readInput(), SIM_DT, brain);
@@ -343,7 +348,8 @@ renderer.setAnimationLoop(() => {
   else {
     const using = fightStarted && fightPolicyVersion >= 0 ? fightPolicyVersion : s.version;
     const newer = fightStarted && fightPolicyVersion >= 0 && s.version > fightPolicyVersion ? ` · v${s.version} next fight` : '';
-    ui.brainStatus.textContent = `NEURAL CORE v${using} · trained on ${s.fights} fights${newer}${s.consented === false ? ' · not learning from you' : ''}`;
+    const notLearning = params.has('notrain') ? ' · test mode, not learning' : s.consented === false ? ' · not learning from you' : '';
+    ui.brainStatus.textContent = `NEURAL CORE v${using} · trained on ${s.fights} fights${newer}${notLearning}`;
   }
 
   if (s.connected && s.consented === false && consentAnswer === 'yes' && !consentResent) {
