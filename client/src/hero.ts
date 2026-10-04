@@ -102,8 +102,10 @@ const BLADES = [
   { at: 1.3, length: 0.6, open: 0.62 },
 ];
 const SPAR_LENGTH = 1.45;
-/** Root roll: folded, the spars rise in a V behind the shoulders; open, they sweep out level. */
-const WING_ROOT_FOLDED = Math.PI / 2 - 0.35;
+/** Root roll: folded, the spars hang down along the back (angled out); open, they sweep out level. */
+const WING_ROOT_FOLDED = -(Math.PI / 2 - 0.3);
+/** Folded wings tilt back so their tips clear the legs while running. */
+const WING_FOLDED_BACK_TILT = 0.4;
 const WING_ROOT_OPEN = 0.22;
 /** Blades folded flat along the spar. */
 const BLADE_FOLDED = Math.PI / 2 - 0.08;
@@ -370,8 +372,9 @@ export function createHero(): Hero {
       const flutter = Math.sin(time * 3.1) * 0.05 * e;
       for (const w of wings) {
         w.root.rotation.z = w.side * (WING_ROOT_FOLDED + (WING_ROOT_OPEN - WING_ROOT_FOLDED) * e + flutter);
-        // Folded wings tuck slightly against the backpack.
-        w.root.rotation.y = w.side * 0.25 * (1 - e);
+        w.root.rotation.x = WING_FOLDED_BACK_TILT * (1 - e);
+        // Telescoping: retracted when folded so the tips clear the ground, full span when open.
+        w.root.scale.setScalar(0.68 + 0.32 * e);
         w.blades.forEach((b, i) => {
           b.pivot.rotation.z = w.side * (BLADE_FOLDED + (b.openAngle - BLADE_FOLDED) * e + flutter * (i + 1) * 0.4);
         });
