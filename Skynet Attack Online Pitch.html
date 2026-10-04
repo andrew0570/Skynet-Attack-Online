@@ -1,0 +1,443 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Skynet Attack Online Pitch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: a fixed 1600×900 stage scaled to the window, one slide at a time, in the game's own
+     look — near-black ember ground, Skynet red for the machine, cyan for the player. */
+  :root {
+    color-scheme: dark;
+    --ground: #0c0605;
+    --panel: #160c0a;
+    --rule: #3a201b;
+    --ink: #f4ebe8;
+    --ink-2: #c9b3ac;
+    --muted: #8f7a74;
+    --skynet: #ff3b1f;
+    --skynet-soft: #ff6a4a;
+    --player: #00e5ff;
+    --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+    --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+    --font-data: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-body); overflow: hidden; }
+  #viewport { position: fixed; inset: 0; overflow: hidden; }
+  #stage { width: 1600px; height: 900px; position: absolute; left: 50%; top: 50%; transform-origin: center center; }
+  .slide { position: absolute; inset: 0; padding: 88px 110px 96px; display: none; flex-direction: column; gap: 36px;
+    background: radial-gradient(ellipse 70% 60% at 85% 20%, rgba(255,59,31,0.10), transparent 70%), var(--ground); }
+  .slide.on { display: flex; }
+  .kicker { font: 600 22px/1 var(--font-display); letter-spacing: 0.28em; text-transform: uppercase; color: var(--skynet-soft); }
+  h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
+  h2 { font-size: 64px; line-height: 1.05; font-weight: 600; letter-spacing: 0.01em; max-width: 22ch; }
+  p { margin: 0; }
+  .lead { font-size: 30px; line-height: 1.45; color: var(--ink-2); max-width: 46ch; }
+  .mono { font-family: var(--font-data); }
+  .red { color: var(--skynet); }
+  .cyan { color: var(--player); }
+  footer.chrome { position: absolute; left: 110px; right: 110px; bottom: 40px; display: flex; justify-content: space-between; font: 500 18px/1 var(--font-data); color: var(--muted); letter-spacing: 0.06em; }
+
+  /* 1 — Title */
+  .title-grid { flex: 1; display: grid; grid-template-columns: 1fr 520px; gap: 40px; align-items: center; }
+  .title-grid h1 { font-size: 132px; line-height: 0.92; font-weight: 700; letter-spacing: 0.04em; color: var(--skynet); text-shadow: 0 0 40px rgba(255,40,10,0.45); }
+  .sao { display: inline-block; margin-top: 26px; font: 600 24px/1 var(--font-data); letter-spacing: 0.3em; color: var(--ink-2); border: 1px solid var(--rule); padding: 10px 14px; border-radius: 4px; }
+  .tagline { margin-top: 34px; font-size: 34px; line-height: 1.35; max-width: 30ch; color: var(--ink); }
+  .byline { margin-top: 44px; display: flex; gap: 18px; align-items: baseline; font-size: 30px; }
+  .byline .who { font-weight: 600; }
+  .byline .team { color: var(--player); font-family: var(--font-display); letter-spacing: 0.06em; }
+  .placeholder { outline: 2px dashed var(--skynet-soft); outline-offset: 6px; border-radius: 3px; }
+  #core { width: 520px; height: 520px; display: block; }
+
+  /* 2 — Problem */
+  .problem { flex: 1; display: grid; grid-template-columns: 1.05fr 1fr; gap: 90px; align-items: start; }
+  .then-now { display: grid; gap: 22px; margin-top: 10px; }
+  .row { display: grid; grid-template-columns: 150px 1fr; gap: 24px; align-items: baseline; padding-bottom: 22px; border-bottom: 1px solid var(--rule); }
+  .row:last-child { border-bottom: 0; }
+  .row .tag { font: 600 20px/1 var(--font-data); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .row.now .tag { color: var(--player); }
+  .row p { font-size: 30px; line-height: 1.4; }
+
+  /* 3 — Overview */
+  .loop { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin-top: 6px; }
+  .step { position: relative; padding: 26px 24px 26px 0; }
+  .step + .step { padding-left: 34px; }
+  .step + .step::before { content: '→'; position: absolute; left: -2px; top: 22px; font: 600 34px/1 var(--font-display); color: var(--skynet); }
+  .step b { display: block; font: 600 30px/1.1 var(--font-display); letter-spacing: 0.08em; margin-bottom: 12px; }
+  .step span { font-size: 23px; line-height: 1.4; color: var(--ink-2); display: block; }
+  .loop-note { font: 500 21px/1.3 var(--font-data); color: var(--muted); margin-top: -14px; }
+  .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px; padding-top: 34px; border-top: 1px solid var(--rule); }
+  .features h3 { font-size: 30px; font-weight: 600; margin-bottom: 12px; }
+  .features p { font-size: 23px; line-height: 1.45; color: var(--ink-2); }
+  .features em { font-style: normal; color: var(--skynet-soft); }
+
+  /* 4 — Tech stack */
+  .arch { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto auto; gap: 26px 0; align-items: stretch; }
+  .tier { padding: 28px 30px; border: 1px solid var(--rule); background: var(--panel); border-radius: 6px; display: grid; gap: 12px; align-content: start; }
+  .tier.shared { border-color: rgba(255,59,31,0.55); box-shadow: inset 0 0 0 1px rgba(255,59,31,0.2); }
+  .tier h3 { font-size: 30px; font-weight: 600; }
+  .tier .where { font: 500 19px/1 var(--font-data); color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .tier ul { margin: 0; padding-left: 22px; display: grid; gap: 8px; font-size: 22px; line-height: 1.35; color: var(--ink-2); }
+  .tier li::marker { color: var(--skynet); }
+  .link { display: grid; place-items: center; font: 500 17px/1.3 var(--font-data); color: var(--muted); text-align: center; padding: 0 8px; position: relative; z-index: 1; }
+  .arch-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr) 132px minmax(0, 1fr); grid-column: 1 / -1; }
+  .arch-row > .tier { min-width: 0; }
+  .arch-row .link b { display: block; font: 600 34px/1 var(--font-display); color: var(--skynet); margin-bottom: 6px; }
+  .bottom-row { grid-column: 1 / -1; display: flex; gap: 46px; font-size: 22px; color: var(--ink-2); padding-top: 18px; border-top: 1px solid var(--rule); }
+  .bottom-row b { color: var(--ink); font-weight: 600; }
+
+  /* 5 — Training */
+  .training { flex: 1; display: grid; grid-template-columns: 1.08fr 1fr; gap: 70px; min-height: 0; }
+  .slide.compact { gap: 26px; }
+  .slide.compact h2 { font-size: 54px; }
+  .figs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  .fig { padding: 14px 0; display: grid; gap: 6px; }
+  .fig + .fig { padding-left: 26px; border-left: 1px solid var(--rule); }
+  .fig .v { font: 600 44px/1 var(--font-display); }
+  .fig .l { font: 500 18px/1.3 var(--font-data); color: var(--muted); letter-spacing: 0.04em; }
+  .chart-wrap { position: relative; margin-top: 18px; }
+  .chart-title { font: 600 22px/1.2 var(--font-display); letter-spacing: 0.04em; margin-bottom: 6px; }
+  .chart-sub { font: 500 18px/1.3 var(--font-data); color: var(--muted); margin-bottom: 10px; }
+  #winChart text { font-family: var(--font-data); font-size: 16px; fill: var(--muted); }
+  #winChart .grid { stroke: var(--rule); stroke-width: 1; }
+  #winChart .base { stroke: #5a3a33; stroke-width: 1; }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--ground); font: 500 17px/1.4 var(--font-data); padding: 8px 10px; border-radius: 5px; white-space: nowrap; transform: translate(-50%, calc(-100% - 12px)); opacity: 0; transition: opacity 0.1s; }
+  .tip.on { opacity: 1; }
+  .styles { display: grid; gap: 0; align-content: start; }
+  .styles .head, .styles .s { display: grid; grid-template-columns: 150px 170px 1fr; gap: 18px; align-items: baseline; }
+  .styles .head { font: 600 17px/1 var(--font-data); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); padding-bottom: 14px; border-bottom: 1px solid var(--rule); }
+  .styles .s { padding: 12px 0; border-bottom: 1px solid var(--rule); font-size: 22px; }
+  .styles .s b { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.04em; }
+  .styles .s .w { font-family: var(--font-data); font-size: 21px; font-variant-numeric: tabular-nums; }
+  .styles .s .w i { font-style: normal; color: var(--skynet); }
+  .styles .s .c { color: var(--ink-2); }
+  .styles .s .c em { font-style: normal; font-family: var(--font-data); font-size: 19px; color: var(--muted); }
+  .styles .note { margin-top: 16px; font: 500 17px/1.4 var(--font-data); color: var(--muted); }
+
+  /* 6 — Demo */
+  .demo { flex: 1; display: grid; grid-template-columns: 1fr 380px; gap: 80px; align-items: center; }
+  .demo h2 { font-size: 104px; max-width: none; color: var(--skynet); letter-spacing: 0.03em; text-shadow: 0 0 36px rgba(255,40,10,0.4); }
+  .version { margin-top: 18px; font: 600 34px/1 var(--font-data); letter-spacing: 0.12em; color: var(--ink); }
+  .watch { margin-top: 44px; display: grid; gap: 16px; font-size: 27px; color: var(--ink-2); }
+  .watch b { color: var(--ink); font-weight: 600; }
+  .join { display: grid; gap: 18px; justify-items: center; text-align: center; }
+  #qr { background: #fff; padding: 18px; border-radius: 8px; width: 304px; height: 304px; display: grid; place-items: center; }
+  #qr img, #qr canvas { display: block; }
+  .join .url { font: 600 21px/1.35 var(--font-data); color: var(--player); word-break: break-all; }
+  .join .how { font-size: 21px; color: var(--ink-2); }
+
+  /* Navigation chrome */
+  #progress { position: fixed; left: 0; top: 0; height: 3px; background: var(--skynet); transition: width 0.25s; }
+  #nav { position: fixed; right: 16px; bottom: 14px; display: flex; gap: 8px; align-items: center; font: 500 13px/1 var(--font-data); color: var(--muted); }
+  #nav button { font: inherit; color: var(--ink-2); background: rgba(255,255,255,0.06); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+  #nav button:focus-visible { outline: 2px solid var(--player); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { #progress { transition: none; } }
+</style>
+
+<div id="viewport"><div id="stage">
+
+  <!-- 1 · Title -->
+  <section class="slide" data-title="Title">
+    <div class="kicker">MHacks 2026 · Actually Intelligent · Best Use of SpacetimeDB</div>
+    <div class="title-grid">
+      <div>
+        <h1>SKYNET<br>ATTACK<br>ONLINE</h1>
+        <span class="sao">SAO</span>
+        <p class="tagline">A boss fight against an AI that learns from every player who fights it.</p>
+        <div class="byline"><span class="who" id="name">Andrew Gohlich</span><span class="team" id="team">Team Redbull-ean Logic</span></div>
+      </div>
+      <canvas id="core" width="1040" height="1040" aria-label="Skynet's glowing red core with an orbiting blade ring"></canvas>
+    </div>
+  </section>
+
+  <!-- 2 · Problem -->
+  <section class="slide" data-title="Problem">
+    <div class="kicker">The problem</div>
+    <div class="problem">
+      <div>
+        <h2>Game bosses still follow a script.</h2>
+        <p class="lead" style="margin-top: 34px">AI in game development mostly helps people <em style="font-style:normal" class="cyan">make</em> games faster. Inside the game, enemies still run pre-ordered movesets: learn the pattern once, and the fight is solved forever.</p>
+      </div>
+      <div class="then-now">
+        <div class="row"><span class="tag">Today</span><p>Fixed attack patterns, tuned once by designers, identical for every player.</p></div>
+        <div class="row now"><span class="tag">What if</span><p>The boss reads <b>how you play</b> and picks counters on its own.</p></div>
+        <div class="row now"><span class="tag">What if</span><p>Every fight, by every player, makes it <b>smarter for everyone</b>.</p></div>
+        <div class="row now"><span class="tag">What if</span><p>It could <b>explain</b> why it chose each attack.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · Overview -->
+  <section class="slide" data-title="Overview">
+    <div class="kicker">Project overview</div>
+    <h2>One shared brain, trained by the whole community.</h2>
+    <div class="loop">
+      <div class="step"><b>FIGHT</b><span>You battle Skynet in a 3D arena in the browser.</span></div>
+      <div class="step"><b>DECIDE</b><span>Every ~½ s it reads 29 signals about the fight and you, and picks 1 of 25 options.</span></div>
+      <div class="step"><b>VALIDATE</b><span>At the end, the server checks the whole fight log before trusting it.</span></div>
+      <div class="step"><b>LEARN</b><span>The shared brain updates; its version number ticks up.</span></div>
+      <div class="step"><b>EVOLVE</b><span>The next player, anywhere, fights the smarter Skynet.</span></div>
+    </div>
+    <p class="loop-note">Only players who opt in contribute · no personal data · fights that fail validation are never learned from</p>
+    <div class="features">
+      <div><h3>Reads your style</h3><p>Tracks 8 habits: range, hiding, dashing, melee, skills, airtime, and more.</p></div>
+      <div><h3>Counters it</h3><p><em>Hunter Drones</em> phase through walls for campers. <em>Reflect Shield</em> punishes beam spam. <em>Feint</em> baits dodgers.</p></div>
+      <div><h3>Explains itself</h3><p>"HUNTER DRONES — because you hide in cover." Hold Tab to see what it has learned.</p></div>
+      <div><h3>Raid mode</h3><p>Five fighters vs one Skynet, run live inside the database.</p></div>
+    </div>
+  </section>
+
+  <!-- 4 · Tech stack -->
+  <section class="slide" data-title="Tech stack">
+    <div class="kicker">Tech stack</div>
+    <h2>One simulation, running in three places.</h2>
+    <div class="arch">
+      <div class="arch-row">
+        <div class="tier">
+          <span class="where">Browser · GitHub Pages</span>
+          <h3>Game client</h3>
+          <ul>
+            <li>TypeScript, Three.js, Vite</li>
+            <li>Hero, Skynet, and arena built in code (no 3D models)</li>
+            <li>Bloom, procedural animation, VFX</li>
+          </ul>
+        </div>
+        <div class="link"><div><b>⇄</b>live<br>subscriptions</div></div>
+        <div class="tier shared">
+          <span class="where">@sao/sim · shared package</span>
+          <h3>Pure TS simulation</h3>
+          <ul>
+            <li>Arena, collision, movement, combat</li>
+            <li>LinUCB contextual bandit: 25 options × 29 inputs</li>
+            <li>Deterministic, tick-based, no DOM</li>
+          </ul>
+        </div>
+        <div class="link"><div><b>⇄</b>reducers</div></div>
+        <div class="tier">
+          <span class="where">SpacetimeDB · Maincloud</span>
+          <h3>Brain + game server</h3>
+          <ul>
+            <li>Brain tables, fight history, snapshots</li>
+            <li><span class="mono">submit_fight</span>: validate, then train</li>
+            <li>Raid loop: scheduled reducer, 20 Hz, ~2 ms per tick</li>
+          </ul>
+        </div>
+      </div>
+      <div class="bottom-row">
+        <span><b>Bot trainer</b> · Node + the same sim, 5 scripted play styles, fights through the real server</span>
+        <span><b>Validation</b> · consent, duration, decision rate, value ranges, rate limits</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · Training summary -->
+  <section class="slide compact" data-title="Training">
+    <div class="kicker">Training summary · round 4</div>
+    <h2>1,500 bot fights later, Skynet counters each style.</h2>
+    <div class="training">
+      <div>
+        <div class="figs">
+          <div class="fig"><span class="v">1,500</span><span class="l">fights learned · 0 rejected</span></div>
+          <div class="fig"><span class="v red">16% → 45%</span><span class="l">Skynet win rate · first vs last 150</span></div>
+          <div class="fig"><span class="v">17% → 5%</span><span class="l">bot win rate · rest hit the 120 s cap</span></div>
+        </div>
+        <div class="chart-wrap" id="chartWrap">
+          <div class="chart-title">Skynet win rate, per 50 fights</div>
+          <div class="chart-sub">Starts untrained (v0, random choices) · ends at brain v1500</div>
+          <svg id="winChart" viewBox="0 0 760 250" width="760" height="250" role="img" aria-label="Skynet's win rate per 50-fight block rises from 10% to about 40–50% within the first 300 fights, then holds."></svg>
+          <div class="tip" id="tip"></div>
+        </div>
+      </div>
+      <div class="styles">
+        <div class="head"><span>Bot style</span><span>Skynet wins</span><span>Move it learned to lean on</span></div>
+        <div class="s"><b>Brawler</b><span class="w">23% → <i>60%</i></span><span class="c">Reflect Shield <em>5% → 20%</em></span></div>
+        <div class="s"><b>Camper</b><span class="w">10% → <i>50%</i></span><span class="c">Flank for sight <em>12% → 23%</em></span></div>
+        <div class="s"><b>Sniper</b><span class="w">40% → <i>57%</i></span><span class="c">Seeker Orbs (flank) <em>11% → 19%</em></span></div>
+        <div class="s"><b>Kiter</b><span class="w">7% → <i>33%</i></span><span class="c">Bolt Volley (lead) <em>7% → 18%</em></span></div>
+        <div class="s"><b>Dodger</b><span class="w">0% → <i>23%</i></span><span class="c">Rise <em>8% → 18%</em></span></div>
+        <p class="note">Shares are of Skynet's actions against that style, first 150 vs last 150 fights. Nobody scripted these pairings; the bandit found them.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · Demo -->
+  <section class="slide" data-title="Demo">
+    <div class="kicker">Live demo</div>
+    <div class="demo">
+      <div>
+        <h2>LIVE DEMO</h2>
+        <div class="version">NEURAL CORE v1500</div>
+        <div class="watch">
+          <span><b>Callouts</b> name each counter and the reason for it</span>
+          <span><b>Read on you</b>: the style Skynet thinks you have</span>
+          <span><b>Tab</b>: what the community taught it, vs. v0</span>
+          <span><b>Raid</b>: join from your phone and fight it together</span>
+        </div>
+      </div>
+      <div class="join">
+        <div id="qr" aria-label="QR code for the live game"></div>
+        <span class="url">andrew0570.github.io/<br>Skynet-Attack-Online</span>
+        <span class="how">Scan · pick Raid · join the lobby</span>
+      </div>
+    </div>
+  </section>
+
+  <footer class="chrome"><span>Skynet Attack Online</span><span id="count"></span></footer>
+</div></div>
+
+<div id="progress"></div>
+<div id="nav"><button id="prev" aria-label="Previous slide">←</button><button id="next" aria-label="Next slide">→</button></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+// ---- Slides: arrows / space / PageUp-Down / click, #n deep links, fit-to-window stage ----
+const slides = [...document.querySelectorAll('.slide')];
+let cur = 0;
+function show(i) {
+  cur = Math.max(0, Math.min(slides.length - 1, i));
+  slides.forEach((s, k) => s.classList.toggle('on', k === cur));
+  document.getElementById('count').textContent = `${String(cur + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')} · ${slides[cur].dataset.title}`;
+  document.getElementById('progress').style.width = `${((cur + 1) / slides.length) * 100}%`;
+  if (location.hash !== `#${cur + 1}`) history.replaceState(null, '', `#${cur + 1}`);
+}
+document.addEventListener('keydown', e => {
+  if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); show(cur + 1); }
+  if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); show(cur - 1); }
+  if (e.key === 'Home') show(0);
+  if (e.key === 'End') show(slides.length - 1);
+});
+document.getElementById('prev').addEventListener('click', () => show(cur - 1));
+document.getElementById('next').addEventListener('click', () => show(cur + 1));
+document.getElementById('stage').addEventListener('click', e => { if (!e.target.closest('svg')) show(cur + 1); });
+function fit() {
+  // Fit the 16:9 stage inside the window, keeping a 16px side gutter.
+  const s = Math.min((window.innerWidth - 32) / 1600, window.innerHeight / 900);
+  document.getElementById('stage').style.transform = `translate(-50%, -50%) scale(${s})`;
+}
+window.addEventListener('resize', fit);
+fit();
+show((parseInt(location.hash.slice(1), 10) || 1) - 1);
+window.addEventListener('hashchange', () => show((parseInt(location.hash.slice(1), 10) || 1) - 1));
+
+// ---- Title: Skynet's core (red faceted core, orbiting blade ring, bloom) ----
+(() => {
+  const c = document.getElementById('core');
+  const g = c.getContext('2d');
+  const W = c.width, R = W / 2;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function frame(t) {
+    const s = t / 1000;
+    g.clearRect(0, 0, W, W);
+    // Glow
+    const glow = g.createRadialGradient(R, R, 20, R, R, R * 0.95);
+    glow.addColorStop(0, 'rgba(255,90,40,0.55)');
+    glow.addColorStop(0.35, 'rgba(255,40,10,0.18)');
+    glow.addColorStop(1, 'rgba(255,30,0,0)');
+    g.fillStyle = glow;
+    g.fillRect(0, 0, W, W);
+    // Blade ring (an ellipse that slowly precesses), back half first
+    const tilt = 0.36 + Math.sin(s * 0.7) * 0.12;
+    const drawRing = front => {
+      g.save();
+      g.translate(R, R);
+      g.rotate(Math.sin(s * 0.4) * 0.25);
+      g.beginPath();
+      g.ellipse(0, 0, R * 0.78, R * 0.78 * tilt, 0, front ? 0 : Math.PI, front ? Math.PI : 2 * Math.PI);
+      g.strokeStyle = front ? 'rgba(210,205,205,0.95)' : 'rgba(150,140,140,0.55)';
+      g.lineWidth = 9;
+      g.stroke();
+      // Blade teeth
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2 + s * 0.9;
+        const inFront = Math.sin(a) > 0;
+        if (inFront !== front) continue;
+        const x = Math.cos(a) * R * 0.78, y = Math.sin(a) * R * 0.78 * tilt;
+        g.fillStyle = front ? 'rgba(235,230,230,0.95)' : 'rgba(150,140,140,0.5)';
+        g.beginPath();
+        g.moveTo(x, y - 14); g.lineTo(x + 10, y); g.lineTo(x, y + 14); g.lineTo(x - 10, y);
+        g.fill();
+      }
+      g.restore();
+    };
+    drawRing(false);
+    // Faceted core: a rotating hexagon with inner facets
+    g.save();
+    g.translate(R, R);
+    g.rotate(s * 0.5);
+    const r = R * 0.3;
+    const pts = Array.from({ length: 6 }, (_, i) => [Math.cos((i / 6) * Math.PI * 2) * r, Math.sin((i / 6) * Math.PI * 2) * r]);
+    const pulse = 0.85 + 0.15 * Math.sin(s * 3);
+    pts.forEach((p, i) => {
+      const q = pts[(i + 1) % 6];
+      g.beginPath();
+      g.moveTo(0, 0); g.lineTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.closePath();
+      const shade = 0.6 + 0.4 * Math.sin(i * 1.7 + s);
+      g.fillStyle = `rgba(${255}, ${Math.round(60 * shade + 20)}, ${Math.round(25 * shade)}, ${pulse})`;
+      g.fill();
+      g.strokeStyle = 'rgba(255,200,170,0.5)';
+      g.lineWidth = 2;
+      g.stroke();
+    });
+    g.restore();
+    const hot = g.createRadialGradient(R, R, 0, R, R, r * 0.8);
+    hot.addColorStop(0, 'rgba(255,240,220,0.9)');
+    hot.addColorStop(1, 'rgba(255,120,60,0)');
+    g.fillStyle = hot;
+    g.beginPath(); g.arc(R, R, r * 0.8, 0, Math.PI * 2); g.fill();
+    drawRing(true);
+    if (!still) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+// ---- Training chart: Skynet win rate per 50-fight block (round 4, 1,500 fights) ----
+(() => {
+  const data = [[50,0.1],[100,0.12],[150,0.26],[200,0.3],[250,0.44],[300,0.44],[350,0.34],[400,0.36],[450,0.42],[500,0.4],[550,0.42],[600,0.4],[650,0.34],[700,0.5],[750,0.44],[800,0.3],[850,0.42],[900,0.42],[950,0.4],[1000,0.54],[1050,0.26],[1100,0.36],[1150,0.32],[1200,0.36],[1250,0.48],[1300,0.4],[1350,0.42],[1400,0.4],[1450,0.5],[1500,0.44]];
+  const svg = document.getElementById('winChart');
+  const NS = 'http://www.w3.org/2000/svg';
+  const W = 760, H = 250, L = 58, Rp = 18, T = 12, B = 40;
+  const x = v => L + ((v - 50) / (1500 - 50)) * (W - L - Rp);
+  const y = v => T + (1 - v / 0.6) * (H - T - B);
+  const el = (tag, attrs, parent = svg) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; };
+  for (const v of [0, 0.2, 0.4, 0.6]) {
+    el('line', { x1: L, x2: W - Rp, y1: y(v), y2: y(v), class: v === 0 ? 'base' : 'grid' });
+    el('text', { x: L - 12, y: y(v) + 5, 'text-anchor': 'end' }).textContent = `${Math.round(v * 100)}%`;
+  }
+  for (const v of [50, 500, 1000, 1500]) el('text', { x: x(v), y: H - 14, 'text-anchor': v === 50 ? 'start' : v === 1500 ? 'end' : 'middle' }).textContent = v === 50 ? 'fight 50' : `${v}`;
+  const area = `M${x(50)},${y(0)} ` + data.map(([a, b]) => `L${x(a)},${y(b)}`).join(' ') + ` L${x(1500)},${y(0)} Z`;
+  el('path', { d: area, fill: 'rgba(255,59,31,0.12)' });
+  el('path', { d: 'M' + data.map(([a, b]) => `${x(a)},${y(b)}`).join(' L'), fill: 'none', stroke: '#ff3b1f', 'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+  const last = data[data.length - 1];
+  el('circle', { cx: x(last[0]), cy: y(last[1]), r: 6, fill: '#ff3b1f', stroke: '#0c0605', 'stroke-width': 3 });
+  el('text', { x: x(50) + 4, y: y(0.1) - 26, fill: '#c9b3ac', style: 'fill:#c9b3ac' }).textContent = 'v0: 10%';
+  // Hover: nearest block
+  const tip = document.getElementById('tip');
+  const wrap = document.getElementById('chartWrap');
+  const dot = el('circle', { r: 6, fill: '#f4ebe8', opacity: 0 });
+  const hit = el('rect', { x: L, y: T, width: W - L - Rp, height: H - T - B, fill: 'transparent', style: 'cursor:crosshair' });
+  hit.addEventListener('mousemove', e => {
+    const box = svg.getBoundingClientRect();
+    const px = ((e.clientX - box.left) / box.width) * W;
+    const d = data.reduce((p, q) => (Math.abs(x(q[0]) - px) < Math.abs(x(p[0]) - px) ? q : p));
+    dot.setAttribute('cx', x(d[0])); dot.setAttribute('cy', y(d[1])); dot.setAttribute('opacity', 1);
+    const wb = wrap.getBoundingClientRect();
+    const scale = box.width / W;
+    tip.style.left = `${(box.left - wb.left + x(d[0]) * scale) / scale}px`;
+    tip.style.top = `${(box.top - wb.top + y(d[1]) * scale) / scale}px`;
+    tip.innerHTML = `fights ${d[0] - 49}–${d[0]} · Skynet won <b>${Math.round(d[1] * 100)}%</b>`;
+    tip.classList.add('on');
+  });
+  hit.addEventListener('mouseleave', () => { tip.classList.remove('on'); dot.setAttribute('opacity', 0); });
+})();
+
+// ---- Demo: QR code for the live game ----
+(() => {
+  const url = 'https://andrew0570.github.io/Skynet-Attack-Online/';
+  const box = document.getElementById('qr');
+  if (window.QRCode) new QRCode(box, { text: url, width: 268, height: 268, colorDark: '#0c0605', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  else box.textContent = url;
+})();
+</script>
+
+</body></html>
