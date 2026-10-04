@@ -156,6 +156,8 @@ export interface BossState {
   pos: Vec3;
   perch: Vec3;
   hp: number;
+  /** This fight's max HP (BOSS.maxHp solo; raids scale it with the team). */
+  maxHp: number;
   energy: number;
   phase: BossPhase;
   /** Seconds left in the current phase. */
@@ -268,7 +270,8 @@ export type FightEvent =
   | { type: 'slam'; pos: Vec3; radius: number }
   | { type: 'playerHit'; damage: number; armor: number; health: number; pos: Vec3 }
   | { type: 'dodged'; pos: Vec3 }
-  | { type: 'bossHit'; damage: number; stunned: boolean }
+  /** base + source: the hit before the stun bonus (raid clients report these to the server). */
+  | { type: 'bossHit'; damage: number; stunned: boolean; base: number; source: DamageSource }
   | { type: 'won' }
   | { type: 'lost' }
   | { type: 'lightningCast'; pos: Vec3 }
@@ -277,7 +280,7 @@ export type FightEvent =
   | { type: 'beamFired'; from: Vec3 }
   | { type: 'beamImpact'; pos: Vec3; hitBoss: boolean }
   | { type: 'move'; move: MoveId; to: Vec3 }
-  | { type: 'reflected'; pos: Vec3; what: 'beam' | 'melee' | 'lightning' | 'rush' }
+  | { type: 'reflected'; pos: Vec3; what: 'beam' | 'melee' | 'lightning' | 'rush'; amount: number; source: DamageSource }
   | { type: 'droneDestroyed'; pos: Vec3 }
   | { type: 'enraged' }
   | { type: 'evaded'; from: Vec3; what: 'beam' | 'lightning' };
@@ -342,6 +345,28 @@ function recordDodge(f: FightState, dodged: boolean): void {
   if (f.recentDodges.length > RECENT_DODGES) f.recentDodges.shift();
 }
 
+/** The FightState fields that belong to one player. Raids keep one slot per member. */
+export const SLOT_KEYS = ['player', 'health', 'armor', 'armorDelay', 'hurt', 'dodgeSide', 'recentDodges', 'skillCd', 'lightning', 'rushHitTimer', 'rushHits', 'shots', 'style', 'styleTrack'] as const;
+export type PlayerSlot = Pick<FightState, (typeof SLOT_KEYS)[number]>;
+
+export function createSlot(x: number, z: number): PlayerSlot {
+  return {
+    player: createPlayer(x, z), health: VITALS.health, armor: VITALS.armor, armorDelay: 0, hurt: 0, dodgeSide: 1, recentDodges: [],
+    skillCd: [0, 0, 0], lightning: null, rushHitTimer: 0, rushHits: 0, shots: [], style: { ...NEUTRAL_STYLE },
+    styleTrack: { swings: 0, dashing: false, losTimer: 0, visible: true },
+  };
+}
+
+/** Make the slot the fight's active player (so every single-player rule applies to it). */
+export function loadSlot(f: FightState, slot: PlayerSlot): void {
+  for (const k of SLOT_KEYS) (f as unknown as Record<string, unknown>)[k] = slot[k];
+}
+
+/** Copy the active player's state back into the slot. */
+export function saveSlot(f: FightState, slot: PlayerSlot): void {
+  for (const k of SLOT_KEYS) (slot as unknown as Record<string, unknown>)[k] = f[k];
+}
+
 export function createFight(arena: Arena, seed = 1): FightState {
   const perch = { ...arena.skynetAnchor };
   return {
@@ -352,7 +377,7 @@ export function createFight(arena: Arena, seed = 1): FightState {
     armorDelay: 0,
     hurt: 0,
     boss: {
-      pos: { ...perch }, perch, hp: BOSS.maxHp, energy: BOSS.maxEnergy * 0.6, phase: 'idle', timer: 0,
+      pos: { ...perch }, perch, hp: BOSS.maxHp, maxHp: BOSS.maxHp, energy: BOSS.maxEnergy * 0.6, phase: 'idle', timer: 0,
       cooldown: 2, arm: -1, aim: vec3(), shotsFired: 0, diveFrom: { ...perch }, decision: -1,
       home: { ...perch }, moveFrom: { ...perch }, moveTo: { ...perch }, moveTime: 0,
       shield: 0, laserYaw: 0, laserPitch: 0, laserSweep: 1, laserPrevYaw: 0, laserDir: null, laserLen: 0,
@@ -490,14 +515,20 @@ function damagePlayer(f: FightState, amount: number, from: Vec3, decision: numbe
   return true;
 }
 
-type DamageSource = 'sword' | 'beam' | 'lightning' | 'rush';
+
+export type DamageSource = 'sword' | 'beam' | 'lightning' | 'rush';
+
+/** A player's hit on Skynet (exported for raids, where each client reports its own hits). */
+export function hitBoss(f: FightState, amount: number, events: FightEvent[], source: DamageSource): void {
+  damageBoss(f, amount, events, source);
+}
 
 function damageBoss(f: FightState, amount: number, events: FightEvent[], source: DamageSource): void {
   if (f.outcome !== 'active') return;
   const b = f.boss;
   if (b.shield > 0) {
     // Reflect Shield: beams bounce back, melee is punished, lightning is absorbed.
-    events.push({ type: 'reflected', pos: { ...b.pos }, what: source === 'sword' ? 'melee' : source });
+    events.push({ type: 'reflected', pos: { ...b.pos }, what: source === 'sword' ? 'melee' : source, amount, source });
     if (source === 'beam') damagePlayer(f, COUNTERS.reflectBeamDamage, b.pos, b.decision, events);
     if (source === 'sword' || source === 'rush') {
       const p = f.player;
@@ -511,8 +542,8 @@ function damageBoss(f: FightState, amount: number, events: FightEvent[], source:
   const dmg = Math.min(b.hp, amount * (stunned ? BOSS.stunnedMultiplier : 1));
   b.hp -= dmg;
   if (b.decision >= 0) f.decisions[b.decision].taken += dmg;
-  events.push({ type: 'bossHit', damage: dmg, stunned });
-  if (!b.enraged && b.hp > 0 && b.hp <= BOSS.maxHp * PHASE2.atHp) {
+  events.push({ type: 'bossHit', damage: dmg, stunned, base: amount, source });
+  if (!b.enraged && b.hp > 0 && b.hp <= b.maxHp * PHASE2.atHp) {
     b.enraged = true;
     events.push({ type: 'enraged' });
   }
@@ -920,8 +951,23 @@ function stepBoss(f: FightState, arena: Arena, dt: number, brain: Brain, events:
   }
 }
 
-function stepProjectiles(f: FightState, arena: Arena, dt: number, events: FightEvent[]): void {
+/**
+ * Move Skynet's projectiles and resolve hits. Solo: against f.player. Raid: pass targets (the
+ * living members' slots); any of them can be hit, and homing still steers at f.player.
+ */
+export function stepProjectiles(f: FightState, arena: Arena, dt: number, events: FightEvent[], targets?: PlayerSlot[]): void {
   const chest = playerChest(f.player);
+  /** Run fn against each target (or just f.player solo); stop at the first that reports a hit. */
+  const each = (fn: () => boolean | void): boolean => {
+    if (!targets) return !!fn();
+    for (const t of targets) {
+      loadSlot(f, t);
+      const hit = fn();
+      saveSlot(f, t);
+      if (hit) return true;
+    }
+    return false;
+  };
   const keep: Projectile[] = [];
   for (const pr of f.projectiles) {
     pr.ttl -= dt;
@@ -939,14 +985,16 @@ function stepProjectiles(f: FightState, arena: Arena, dt: number, events: FightE
     const next = add(pr.pos, pr.vel, dt);
 
     // Player hit (direct).
-    if (distToPlayer(f.player, next) <= pr.radius + 0.45) {
-      if (pr.aoe > 0) {
-        events.push({ type: 'impact', pos: next, radius: pr.aoe, kind: pr.kind });
-        areaDamage(f, next, pr.aoe, pr.damage, pr.decision, events);
-      } else {
-        events.push({ type: 'impact', pos: next, radius: pr.radius * 2, kind: pr.kind });
-        damagePlayer(f, pr.damage, pr.pos, pr.decision, events);
-      }
+    const direct = each(() => {
+      if (distToPlayer(f.player, next) > pr.radius + 0.45) return false;
+      events.push({ type: 'impact', pos: next, radius: pr.aoe || pr.radius * 2, kind: pr.kind });
+      if (pr.aoe > 0) areaDamage(f, next, pr.aoe, pr.damage, pr.decision, events);
+      else damagePlayer(f, pr.damage, pr.pos, pr.decision, events);
+      return true;
+    });
+    if (direct) {
+      // A shell's splash also reaches teammates standing in the blast.
+      if (pr.aoe > 0 && targets) each(() => void areaDamage(f, next, pr.aoe, pr.damage, pr.decision, events));
       continue;
     }
     // World hit: walls/roofs block projectiles (that's what makes cover work) — except drones.
@@ -955,7 +1003,7 @@ function stepProjectiles(f: FightState, arena: Arena, dt: number, events: FightE
     if (t < 1 || next.y <= ground) {
       const hit = t < 1 ? add(pr.pos, sub(next, pr.pos), t) : { x: next.x, y: ground, z: next.z };
       events.push({ type: 'impact', pos: hit, radius: pr.aoe || pr.radius * 2, kind: pr.kind });
-      if (pr.aoe > 0) areaDamage(f, hit, pr.aoe, pr.damage, pr.decision, events);
+      if (pr.aoe > 0) each(() => void areaDamage(f, hit, pr.aoe, pr.damage, pr.decision, events));
       continue;
     }
     pr.pos = next;
@@ -1260,15 +1308,17 @@ function updateStyle(f: FightState, arena: Arena, input: PlayerInput, dt: number
   s.dashes = rate(s.dashes, dashed);
 }
 
-/** Advance the whole fight one tick. Deterministic given the same inputs, seed, and brain. */
-export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: number, brain: Brain): FightEvent[] {
-  const events: FightEvent[] = [];
+/**
+ * The player's half of a tick: movement (unless moved is false: a raid member whose client owns
+ * its movement), vitals, sword, skills, and play-style tracking.
+ */
+export function stepPlayerSide(f: FightState, arena: Arena, input: PlayerInput, dt: number, events: FightEvent[], moved = true): void {
   const p = f.player;
   const wasDashing = p.dashTimer > 0;
   const prevSwing = p.swingTimer;
   const prevCd = f.skillCd.slice();
   // After a defeat the body still obeys physics (falls, slides from knockback) but takes no input.
-  stepPlayer(p, f.outcome === 'lost' ? NO_INPUT : input, dt, arena, f.time);
+  if (moved) stepPlayer(p, f.outcome === 'lost' ? NO_INPUT : input, dt, arena, f.time);
   // Remember which side the player dodges to, relative to Skynet's line of fire.
   if (!wasDashing && p.dashTimer > 0) {
     const los = sub(p.pos, f.boss.pos);
@@ -1280,13 +1330,31 @@ export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: n
   f.armorDelay = Math.max(0, f.armorDelay - dt);
   if (f.armorDelay <= 0 && f.outcome === 'active') f.armor = Math.min(VITALS.armor, f.armor + VITALS.armorRegen * dt);
   if (f.outcome === 'active') {
-    stepSword(f, events);
-    stepSkills(f, arena, input, dt, events);
+    if (moved) {
+      stepSword(f, events);
+      stepSkills(f, arena, input, dt, events);
+    }
     const usedSkill = f.skillCd.some((c, i) => c > prevCd[i]);
     updateStyle(f, arena, input, dt, p.swingTimer > prevSwing, usedSkill, !wasDashing && p.dashTimer > 0 && !p.rushing);
-    stepBoss(f, arena, dt, brain, events);
   }
-  stepProjectiles(f, arena, dt, events);
+}
+
+/** Skynet's half of a tick (exported for raids, which pick the target player first). */
+export function stepBossSide(f: FightState, arena: Arena, dt: number, brain: Brain, events: FightEvent[]): void {
+  if (f.outcome === 'active') stepBoss(f, arena, dt, brain, events);
+}
+
+/**
+ * Advance the whole fight one tick. Deterministic given the same inputs, seed, and brain.
+ * brain null: only the player side runs (raid clients; Skynet lives on the server).
+ */
+export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: number, brain: Brain | null): FightEvent[] {
+  const events: FightEvent[] = [];
+  stepPlayerSide(f, arena, input, dt, events);
+  if (brain) {
+    stepBossSide(f, arena, dt, brain, events);
+    stepProjectiles(f, arena, dt, events);
+  }
   f.time += dt;
   resolveDecisions(f, f.outcome !== 'active');
   return events;

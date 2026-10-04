@@ -34,6 +34,11 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import RaidHitReducer from "./raid_hit_reducer";
+import RaidJoinReducer from "./raid_join_reducer";
+import RaidLeaveReducer from "./raid_leave_reducer";
+import RaidStartReducer from "./raid_start_reducer";
+import RaidUpdateReducer from "./raid_update_reducer";
 import SetConsentReducer from "./set_consent_reducer";
 import SubmitFightReducer from "./submit_fight_reducer";
 
@@ -45,6 +50,8 @@ import PlayerRow from "./player_table";
 import PolicyArmRow from "./policy_arm_table";
 import PolicyMetaRow from "./policy_meta_table";
 import PolicySnapshotRow from "./policy_snapshot_table";
+import RaidRow from "./raid_table";
+import RaidMemberRow from "./raid_member_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -105,10 +112,40 @@ const tablesSchema = __schema({
       { name: 'policy_snapshot_version_key', constraint: 'unique', columns: ['version'] },
     ],
   }, PolicySnapshotRow),
+  raid: __table({
+    name: 'raid',
+    indexes: [
+      { accessor: 'id', name: 'raid_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'raid_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RaidRow),
+  raidMember: __table({
+    name: 'raid_member',
+    indexes: [
+      { accessor: 'id', name: 'raid_member_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'raidId', name: 'raid_member_raid_id_idx_btree', algorithm: 'btree', columns: [
+        'raidId',
+      ] },
+    ],
+    constraints: [
+      { name: 'raid_member_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RaidMemberRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("raid_hit", RaidHitReducer),
+  __reducerSchema("raid_join", RaidJoinReducer),
+  __reducerSchema("raid_leave", RaidLeaveReducer),
+  __reducerSchema("raid_start", RaidStartReducer),
+  __reducerSchema("raid_update", RaidUpdateReducer),
   __reducerSchema("set_consent", SetConsentReducer),
   __reducerSchema("submit_fight", SubmitFightReducer),
 );

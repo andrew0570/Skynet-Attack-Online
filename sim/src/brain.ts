@@ -91,7 +91,7 @@ export function computeFeatures(f: FightState, arena: Arena): number[] {
     f.armor / VITALS.armor,
     ...SKILL_ORDER.map((_, i) => (f.skillCd[i] <= 0 ? 1 : 0)),
     b.energy / BOSS.maxEnergy,
-    b.hp / BOSS.maxHp,
+    b.hp / b.maxHp,
     Math.min(f.projectiles.length / 10, 1.5),
     dodgeRate,
     Math.min(Math.hypot(b.pos.x - b.perch.x, b.pos.y - b.perch.y, b.pos.z - b.perch.z) / 40, 1.5),

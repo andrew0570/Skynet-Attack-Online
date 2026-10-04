@@ -10,5 +10,7 @@ export * from './arena';
 export * from './player';
 export * from './combat';
 export * from './brain';
+export * from './bots';
+export * from './raid';
 
 export const BOSS_NAME = 'Skynet';

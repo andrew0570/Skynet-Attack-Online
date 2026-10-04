@@ -5,6 +5,12 @@ import {
   ARMS,
   BOSS,
   bossCanSee,
+  applyMemberHit,
+  createRaid,
+  RAID,
+  raidFromJson,
+  raidToJson,
+  stepRaid,
   PHASE2,
   BOSS_REACH,
   COUNTERS,
@@ -484,6 +490,39 @@ check('walls block the Sweeping Laser', laserCover.f.armor === VITALS.armor && l
     if (r.f.boss.hp < BOSS.maxHp) hits++;
   }
   check('Skynet sidesteps some sword beams it sees coming', evades >= 3 && evades <= 10 && hits + evades === 12, `${evades} of 12 beams evaded, ${hits} hit`);
+}
+
+// Co-op raid: 1 idle human + 4 bots vs a raid-scaled Skynet, stored as JSON between server ticks.
+{
+  const brainPolicy = createPolicy();
+  const brain = learnedBrain(brainPolicy);
+  let r = createRaid(arena, [null, 'aggressor', 'kiter', 'dodger', 'sniper'], 42);
+  const hp0 = r.fight.boss.hp;
+  const t0 = performance.now();
+  let ticks = 0;
+  let maxJson = 0;
+  for (let tick = 0; tick < RAID.tickRate * 40 && r.fight.outcome === 'active'; tick++) {
+    for (let s = 0; s < RAID.simSteps; s++) stepRaid(r, arena, SIM_DT, brain);
+    const json = raidToJson(r);
+    maxJson = Math.max(maxJson, json.length);
+    r = raidFromJson(json);
+    ticks++;
+  }
+  const ms = (performance.now() - t0) / ticks;
+  const hurt = r.members.filter(m => m.slot.health + m.slot.armor < VITALS.health + VITALS.armor).length;
+  check('raid: bots fight a scaled Skynet across JSON round-trips', hp0 === Math.round(BOSS.maxHp * (1 + RAID.hpPerMember * 4)) && r.fight.boss.hp < hp0 && hurt >= 1,
+    `Skynet ${hp0} → ${Math.round(r.fight.boss.hp)} HP, ${hurt}/5 members hurt, ${r.members.filter(m => m.dead).length} down, outcome ${r.fight.outcome}`);
+  check('raid: server tick fits the 50 ms budget', ms < 25, `${ms.toFixed(2)} ms per tick, state ≤ ${(maxJson / 1024).toFixed(1)} KB`);
+  const before = r.fight.boss.hp;
+  const human = r.members[0];
+  human.dead = false;
+  human.slot.health = 100;
+  human.slot.player.pos = { ...r.fight.boss.pos, y: r.fight.boss.pos.y - 2 };
+  r.fight.boss.shield = 0;
+  r.fight.outcome = 'active';
+  applyMemberHit(r, 0, 44, 'sword');
+  const forged = applyMemberHit(r, 0, 5000, 'sword');
+  check('raid: hit reports are applied and validated', r.fight.boss.hp < before && forged.length === 0, `${Math.round(before)} → ${Math.round(r.fight.boss.hp)} HP; a 5000-damage report was ignored`);
 }
 
 // Play-style profile: hiding / dashing / brawling habits are picked up within ~20-30 s.

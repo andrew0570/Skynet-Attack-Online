@@ -66,3 +66,42 @@ export const PolicySnapshot = __t.object("PolicySnapshot", {
 });
 export type PolicySnapshot = __Infer<typeof PolicySnapshot>;
 
+export const Raid = __t.object("Raid", {
+  id: __t.u64(),
+  status: __t.string(),
+  createdAt: __t.timestamp(),
+  endedAtMicros: __t.u64(),
+  tick: __t.u32(),
+  bossHp: __t.f64(),
+  bossMaxHp: __t.f64(),
+  policyVersion: __t.u32(),
+  sim: __t.string(),
+  events: __t.string(),
+});
+export type Raid = __Infer<typeof Raid>;
+
+export const RaidMember = __t.object("RaidMember", {
+  id: __t.u64(),
+  raidId: __t.u64(),
+  owner: __t.string(),
+  slot: __t.u32(),
+  name: __t.string(),
+  color: __t.string(),
+  isBot: __t.bool(),
+  botStyle: __t.string(),
+  state: __t.string(),
+  hits: __t.string(),
+  skillsUsed: __t.u32(),
+  health: __t.f64(),
+  armor: __t.f64(),
+  dead: __t.bool(),
+  dealt: __t.f64(),
+});
+export type RaidMember = __Infer<typeof RaidMember>;
+
+export const RaidTick = __t.object("RaidTick", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type RaidTick = __Infer<typeof RaidTick>;
+
