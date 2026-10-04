@@ -1,0 +1,130 @@
+# Skynet Assault Online (SAO) — MHacks 2026
+
+Hackathon project for MHacks 2026 (University of Michigan). This file is the source of
+truth for project context — keep it updated as decisions are made.
+
+## Hackathon constraints
+Full details in [docs/handbook.md](docs/handbook.md).
+- **Hacking window:** Sat Oct 3, 12 PM → Sun Oct 4, 12 PM (24 hours).
+- **Submission deadline:** Sun Oct 4, **12:00 PM** on Devpost — hard deadline, no exceptions.
+- **Judging:** Sun Oct 4, 12:30–2:30 PM in person; 3-min pitch + demo; team must be present.
+- **Judging criteria:** innovation, technical complexity, usability, presentation quality.
+- **Rules:** teams of 1–4; all code written during the hackathon.
+- **Team:** Solo — scope must stay tight; every feature needs a cut line.
+- **Tracks targeted:**
+  - **Actually Intelligent (AI)** — applied AI at the core, beyond an LLM wrapper or agent.
+  - **Best use of Spacetime** — SpacetimeDB as the core real-time backend (must be meaningful).
+  - Also eligible: Grand Prize. Optional low-effort: Notability, .Tech domain.
+
+## Problem statement
+AI in game development today mostly speeds up *making* games (e.g. AI plugins in engines).
+AI could instead play an integral role *inside* games: dialogue and character interactions
+become dynamic conversations, and boss battles go from pre-ordered movesets to complex,
+adaptive fights. Deeper integration of AI brings games to life — the sci-fi games we dream of.
+
+## Theme and naming
+- **Project:** *Skynet Assault Online* (**SAO**) — a nod to *Sword Art Online*, which inspired
+  the dream of realistic virtual worlds with truly intelligent game characters.
+- **Boss:** **Skynet** (from *The Terminator*) — AI as a dangerous overlord that learns and
+  adapts. A floating machine intelligence: glowing red core + orbiting blade rings, procedurally
+  animated (no rigging).
+- **Narrative:** the player community must come together to defeat a highly difficult AI —
+  and the community's own fights are what make Skynet smarter.
+- **Player:** agile pilot with an energy blade; sprint, jump, dash. Sci-fi crater arena.
+- Use "Skynet" in code and UI (not "Warden" — that was a placeholder name).
+
+## Idea
+**A 3D browser boss battle where Skynet is driven by a learning algorithm, trained by the
+community of players who fight it.** Every fight (from consenting players) becomes training
+data; the boss's policy lives in SpacetimeDB and is shared by every player's game — so the
+Skynet everyone faces keeps getting smarter.
+
+Design details and reasoning: [docs/design.md](docs/design.md).
+
+### Core demo flow (MVP)
+1. Open the site → consent notice → spawn into a small 3D arena.
+2. Fight Skynet with fast movement (sprint, dash, jump) and a basic attack.
+3. Skynet chooses moves via the shared learned policy; fight ends in win/loss.
+4. Show a live "Skynet brain" panel: fights learned from, how its move preferences have
+   shifted, and how it has adapted to common player habits.
+
+### Multiplayer
+Single-player first (tonight). Multiplayer is a **high-value stretch for Sunday morning** —
+it fits the "community unites against Skynet" theme. Two tiers, in order:
+1. **Global Resistance** (cheap): a shared Skynet "core integrity" pool in SpacetimeDB; every
+   player's damage in their own fight drains it live, and everyone sees the bar and a feed.
+2. **Co-op raid** (expensive): players share one arena; Skynet runs server-side in a scheduled
+   reducer using the same `sim/` code. Only if M1–M5 are done.
+
+### Milestones
+Schedule and done-criteria: [docs/milestones.md](docs/milestones.md).
+
+## Architecture
+- **Simulation (`sim/`, package `@sao/sim`)**: pure TypeScript combat logic — player, Skynet,
+  moves, damage, features, bandit decision. **No Three.js, DOM, or Node imports**, so the same
+  code runs in the browser, the bot trainer, and (for co-op) the SpacetimeDB module. Keep it
+  **tick-based** (`step(state, inputs, dt)`) and free of wall-clock/`Math.random` calls
+  (pass in an RNG) so the server can own the sim later.
+- **Client (`client/`, `@sao/client`):** renders the sim with Three.js, reads input,
+  subscribes to the policy, submits the fight log at fight end.
+- **Server (`server/`, `@sao/server`):** SpacetimeDB TypeScript module. Stores players
+  (consent), policy, fights, decisions; `submit_fight` validates the log, then applies the
+  bandit update and snapshots the policy.
+- **Client bindings:** `client/src/module_bindings/` is generated — regenerate with
+  `npm run db:generate` after changing server tables/reducers; never edit by hand.
+- SpacetimeDB 2.x TypeScript API reference: [docs/spacetimedb-guide.md](docs/spacetimedb-guide.md).
+
+## Tech stack
+- **Language:** TypeScript everywhere; npm workspaces (`sim`, `client`, `server`).
+- **Client:** Vite 8 + Three.js 0.186; custom kinematic character controller (no physics engine).
+- **Backend:** SpacetimeDB 2.10 (TypeScript module + TypeScript client SDK).
+- **Boss AI:** contextual bandit (LinUCB) over discrete Skynet moves; decisions computed from
+  the shared policy, updates applied server-side.
+- **Hosting (Sunday):** SpacetimeDB Maincloud + static frontend host.
+
+## Directory layout
+```
+.
+├── CLAUDE.md            # Project context for Claude (this file)
+├── README.md            # Public-facing description (doubles as Devpost draft)
+├── env.ps1              # Puts project-local node + spacetime on PATH
+├── package.json         # npm workspaces root + scripts
+├── spacetime.json       # SpacetimeDB project config (module path, default server)
+├── spacetime.local.json # Database name
+├── sim/src/             # Shared pure-TS game simulation + AI
+├── client/              # Vite + Three.js game (src/module_bindings is generated)
+├── server/src/          # SpacetimeDB module
+├── tools/               # Headless bot trainer (M5)
+├── docs/                # design, milestones, handbook, SpacetimeDB guide, notes
+└── .tools/              # Gitignored toolchain: node, spacetime CLI, local DB data, npm cache
+    └── bin/spacetime.cmd  # Wrapper pinning the CLI to .tools/spacetime-root (tracked)
+```
+
+## Toolchain (project-local, nothing installed system-wide)
+- Node.js v24.21.0 LTS → `.tools/node-v24.21.0-win-x64/`
+- SpacetimeDB CLI + standalone v2.10.2 → `.tools/spacetime/`, all config/keys/data in
+  `.tools/spacetime-root/` via the `spacetime` wrapper.
+- npm cache → `.tools/npm-cache/`.
+- VS Code terminals get the PATH automatically (`.vscode/settings.json`). In other shells (and
+  in every Claude PowerShell call) run `. .\env.ps1` first.
+- The local DB lives inside OneDrive. If OneDrive file locking causes DB errors, move the data
+  dir out (`spacetime start --data-dir <path>`).
+
+## Commands
+Run from the repo root after `. .\env.ps1`:
+| Command | What |
+|---|---|
+| `npm install` | Install all workspace deps (single root `node_modules`) |
+| `npm run db:start` | Local SpacetimeDB on `127.0.0.1:3000` (keep running) |
+| `npm run db:publish` | Build + publish `server/` to local DB `skynet-assault-online` |
+| `npm run db:generate` | Regenerate client bindings |
+| `npm run db:logs` | Module logs |
+| `npm run dev` | Client dev server → http://localhost:5173 |
+| `npm run build` | Type-check + production build of the client |
+| `npx tsc --noEmit -p server` | Type-check the server module (`spacetime build` skips it) |
+| `spacetime sql --server local skynet-assault-online "SELECT * FROM player"` | Inspect data |
+
+## Working conventions
+- Hackathon pace: favor working demos over polish; hardcode/mock anything not on the demo path.
+- Keep each milestone demoable before starting the next; commit at every milestone.
+- Keep secrets in `.env` (gitignored); never commit API keys or tokens.

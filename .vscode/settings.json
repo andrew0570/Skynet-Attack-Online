@@ -1,0 +1,14 @@
+{
+  "terminal.integrated.env.windows": {
+    "PATH": "${workspaceFolder}\\.tools\\bin;${workspaceFolder}\\.tools\\node-v24.21.0-win-x64;${env:PATH}",
+    "npm_config_cache": "${workspaceFolder}\\.tools\\npm-cache"
+  },
+  "search.exclude": {
+    ".tools": true,
+    "**/node_modules": true
+  },
+  "files.watcherExclude": {
+    "**/.tools/**": true,
+    "**/node_modules/**": true
+  }
+}

@@ -1,0 +1,34 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+npm-debug.log*
+
+# Editors / OS
+.vscode/*
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project-local toolchain (Node, SpacetimeDB CLI + local DB data); wrappers in .tools/bin are tracked
+.tools/*
+!.tools/bin/
+
+# Claude Code local settings
+.claude/settings.local.json
