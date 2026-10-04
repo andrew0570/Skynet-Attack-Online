@@ -1,5 +1,5 @@
 import { raycast, type Arena } from './arena';
-import { HURT_INVULN, PLAYER, PLAYER_HP, SWORD } from './config';
+import { HURT_INVULN, PLAYER, SWORD, VITALS } from './config';
 import { clamp, vec3, type Vec3 } from './math';
 import { createPlayer, stepPlayer, type PlayerInput, type PlayerState } from './player';
 import { mulberry32, type Rng } from './rng';
@@ -128,7 +128,7 @@ export type FightEvent =
   | { type: 'impact'; pos: Vec3; radius: number; kind: ProjectileKind }
   | { type: 'sweep'; pos: Vec3; radius: number }
   | { type: 'slam'; pos: Vec3; radius: number }
-  | { type: 'playerHit'; damage: number; pos: Vec3 }
+  | { type: 'playerHit'; damage: number; armor: number; health: number; pos: Vec3 }
   | { type: 'dodged'; pos: Vec3 }
   | { type: 'bossHit'; damage: number; stunned: boolean }
   | { type: 'won' }
@@ -137,7 +137,12 @@ export type FightEvent =
 export interface FightState {
   time: number;
   player: PlayerState;
-  playerHp: number;
+  /** Never regenerates; 0 = defeat. */
+  health: number;
+  /** Absorbs damage first; regenerates after VITALS.armorRegenDelay without being hit. */
+  armor: number;
+  /** Seconds until armor starts regenerating. */
+  armorDelay: number;
   hurt: number;
   boss: BossState;
   projectiles: Projectile[];
@@ -157,7 +162,9 @@ export function createFight(arena: Arena, seed = 1): FightState {
   return {
     time: 0,
     player: createPlayer(arena.spawn.x, arena.spawn.z),
-    playerHp: PLAYER_HP,
+    health: VITALS.health,
+    armor: VITALS.armor,
+    armorDelay: 0,
     hurt: 0,
     boss: {
       pos: { ...perch }, perch, hp: BOSS.maxHp, energy: BOSS.maxEnergy * 0.6, phase: 'idle', timer: 0,
@@ -248,11 +255,16 @@ function damagePlayer(f: FightState, amount: number, from: Vec3, decision: numbe
     if (p.invuln > 0) events.push({ type: 'dodged', pos: { ...p.pos } });
     return;
   }
-  const dealt = Math.min(amount, f.playerHp);
-  f.playerHp -= dealt;
+  // Armor absorbs first; the overflow hits health.
+  const toArmor = Math.min(amount, f.armor);
+  const toHealth = Math.min(amount - toArmor, f.health);
+  f.armor -= toArmor;
+  f.health -= toHealth;
+  f.armorDelay = VITALS.armorRegenDelay;
+  const dealt = toArmor + toHealth;
   f.hurt = HURT_INVULN;
   if (decision >= 0) f.decisions[decision].dealt += dealt;
-  events.push({ type: 'playerHit', damage: dealt, pos: { ...p.pos } });
+  events.push({ type: 'playerHit', damage: dealt, armor: toArmor, health: toHealth, pos: { ...p.pos } });
   if (knockback > 0) {
     const d = sub(p.pos, from);
     const h = Math.hypot(d.x, d.z) || 1;
@@ -262,7 +274,7 @@ function damagePlayer(f: FightState, amount: number, from: Vec3, decision: numbe
     p.onGround = false;
     p.climbing = false;
   }
-  if (f.playerHp <= 0) {
+  if (f.health <= 0) {
     f.outcome = 'lost';
     events.push({ type: 'lost' });
   }
@@ -560,6 +572,9 @@ export function stepFight(f: FightState, arena: Arena, input: PlayerInput, dt: n
     if (Math.abs(cross) > 1e-3) f.dodgeSide = Math.sign(cross);
   }
   f.hurt = Math.max(0, f.hurt - dt);
+  // Armor regenerates slowly once you've gone a while without being hit; health never does.
+  f.armorDelay = Math.max(0, f.armorDelay - dt);
+  if (f.armorDelay <= 0 && f.outcome === 'active') f.armor = Math.min(VITALS.armor, f.armor + VITALS.armorRegen * dt);
   if (f.outcome === 'active') {
     stepSword(f, events);
     stepBoss(f, arena, dt, brain, events);

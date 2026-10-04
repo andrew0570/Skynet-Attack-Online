@@ -70,7 +70,12 @@ Use **Three.js** in the browser:
 - **Decision = arm** (17): wait 0.6 s / wait 1.6 s, or attack × aim mode
   (direct / lead / flank — flank offsets toward the player's last dodge side). The brain
   chooses frequency (by waiting) and aim; energy enforces the hard limit.
-- **Player**: 100 HP, 0.4 s invulnerability after a hit, dash i-frames dodge everything.
+- **Player vitals** (`VITALS`, `STAMINA` in config.ts): **armor** 50 absorbs damage first and
+  regenerates 5/s after 4 s unhit; **health** 100 never regenerates (0 = defeat); **stamina**
+  100 regenerates 32/s after a 0.5 s pause and pays for sprinting (20/s), jumps (10 ground /
+  16 air), and dashes (22). No fixed double-jump/air-dash limits — chain them while stamina
+  lasts (dash keeps its 0.55 s cooldown). Sprint 22 m/s.
+- 0.4 s invulnerability after a hit; dash i-frames dodge everything.
   Laser sword: 3-hit combo (28/28/44) toward the camera aim; air swings hang briefly.
 - **Decision log** (`fight.decisions`): per decision, damage dealt and damage taken — the
   reward signal for M4.

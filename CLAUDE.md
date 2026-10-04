@@ -31,7 +31,9 @@ adaptive fights. Deeper integration of AI brings games to life — the sci-fi ga
 - **Narrative:** the player community must come together to defeat a highly difficult AI —
   and the community's own fights are what make Skynet smarter.
 - **Player:** armored space hero with a laser sword (procedural model + animation in
-  `client/src/hero.ts`); sprint, jump + double jump with air steering, aimed 3D dash (up to
+  `client/src/hero.ts`); armor (regenerates) / health (doesn't) / stamina (fast regen; pays
+  for sprint, jumps, dashes — no fixed air-jump/air-dash limits); sprint, jumps with air
+  steering, aimed 3D dash (up to
   ~83°), vine climbing + wall jump, Caps Lock glide with fold-out cybernetic wings (look down
   to dive). Glide was moved off Ctrl to avoid Ctrl+W closing the tab — don't bind gameplay to
   Ctrl.

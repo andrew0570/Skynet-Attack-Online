@@ -24,9 +24,18 @@
       #boss-energy-bar { height: 4px; margin-top: 4px; }
       #boss-energy { background: #ffb020; }
       #boss-state { text-align: center; font-size: 0.8rem; height: 1.1em; margin-top: 4px; color: #9dffe0; letter-spacing: 0.15em; }
-      #player-hud { position: fixed; left: 24px; bottom: 24px; width: 260px; pointer-events: none; }
-      #player-hud .label { font-size: 0.75rem; letter-spacing: 0.25em; color: #00e5ff; margin-bottom: 4px; }
-      #player-hp { background: linear-gradient(90deg, #00b8d4, #00e5ff); }
+      #player-hud { position: fixed; left: 24px; bottom: 24px; width: 260px; pointer-events: none; display: grid; gap: 8px; }
+      #player-hud .label { display: flex; justify-content: space-between; font-size: 0.7rem; letter-spacing: 0.25em; margin-bottom: 3px; }
+      #player-hud .label span:last-child { letter-spacing: 0.05em; opacity: 0.8; }
+      #player-hud .armor .label { color: #8fd3ff; }
+      #player-hud .health .label { color: #ff6b5a; }
+      #player-hud .stamina .label { color: #ffd23d; }
+      #player-armor { background: linear-gradient(90deg, #5aa9e6, #b8e6ff); }
+      #player-health { background: linear-gradient(90deg, #e0301e, #ff7a5a); }
+      #player-stamina { background: linear-gradient(90deg, #e0a800, #ffe066); transition: width 0.05s; }
+      #player-hud .stamina .bar { height: 6px; }
+      #player-hud .stamina.low .label { animation: blink 0.4s steps(2) infinite; }
+      @keyframes blink { 50% { opacity: 0.3; } }
       #dash { position: fixed; left: 50%; bottom: 28px; width: 160px; height: 6px; transform: translateX(-50%); background: rgba(255,255,255,0.15); border-radius: 3px; overflow: hidden; }
       #dash-fill { height: 100%; width: 100%; background: #00e5ff; }
       #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(0,229,255,0.85); box-shadow: 0 0 6px #00e5ff; pointer-events: none; }
@@ -45,15 +54,17 @@
       <div id="boss-state"></div>
     </div>
     <div id="player-hud">
-      <div class="label">ARMOR</div>
-      <div class="bar"><div id="player-hp"></div></div>
+      <div class="armor"><div class="label"><span>ARMOR</span><span id="armor-text"></span></div><div class="bar"><div id="player-armor"></div></div></div>
+      <div class="health"><div class="label"><span>HEALTH</span><span id="health-text"></span></div><div class="bar"><div id="player-health"></div></div></div>
+      <div class="stamina" id="stamina-row"><div class="label"><span>STAMINA</span><span id="stamina-text"></span></div><div class="bar"><div id="player-stamina"></div></div></div>
     </div>
     <div id="crosshair"></div>
     <div id="vignette"></div>
     <div id="result" class="hidden"><h1 id="result-title"></h1><p>Press R to fight again</p></div>
     <div id="hud">
       <h1>SKYNET ATTACK ONLINE</h1>
-      <p>WASD move · Mouse look · Shift sprint · Space jump (x2) · Q / Right-click dash · Hold Caps Lock in air to glide</p>
+      <p>WASD move · Mouse look · Shift sprint · Space jump (again in air) · Q / Right-click dash · Hold Caps Lock in air to glide</p>
+      <p>Sprinting, jumps, and dashes cost stamina (it refills fast) · Armor regenerates, health does not</p>
       <p>Left-click: laser sword (3-hit combo) · Dash through attacks to dodge them</p>
       <p>Skynet's energy bar limits its attacks — strike when it's drained or stunned after a Dive Slam.</p>
       <p>Push into glowing vines to climb · Amber walls shift · Walls block bolts, not mortars · R restart · Esc release mouse</p>

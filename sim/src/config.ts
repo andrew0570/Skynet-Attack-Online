@@ -47,9 +47,28 @@ export const SWORD = {
   moveScale: 0.45,
 };
 
-export const PLAYER_HP = 100;
+/** Damage hits armor first; overflow goes to health. Armor regenerates, health never does. */
+export const VITALS = {
+  health: 100,
+  armor: 50,
+  armorRegen: 5,
+  /** Seconds after the last hit before armor starts regenerating. */
+  armorRegenDelay: 4,
+};
 /** Invulnerability after taking a hit, so a volley can't shred you instantly. */
 export const HURT_INVULN = 0.4;
+
+/** Stamina gates sprinting, jumping, and dashing (no fixed air-jump/air-dash charges). */
+export const STAMINA = {
+  max: 100,
+  regen: 32,
+  /** Seconds after spending stamina (or while sprinting) before it regenerates. */
+  regenDelay: 0.5,
+  sprintDrain: 20,
+  jumpCost: 10,
+  airJumpCost: 16,
+  dashCost: 22,
+};
 
 export const PLAYER = {
   radius: 0.4,
@@ -57,7 +76,7 @@ export const PLAYER = {
   /** Ledges up to this height are walked onto; taller solids are walls. */
   stepHeight: 0.45,
   runSpeed: 10,
-  sprintSpeed: 16,
+  sprintSpeed: 22,
   groundAccel: 90,
   gravity: 34,
   /** Air steering: velocity rotates toward input (rad/s) and speeds up to run/sprint speed. */
@@ -67,8 +86,7 @@ export const PLAYER = {
   /** Horizontal speed multiplier applied on a ground jump (carries you farther). */
   jumpBoost: 1.2,
   airJumpSpeedScale: 0.9,
-  maxAirSpeed: 24,
-  airJumps: 1,
+  maxAirSpeed: 28,
   coyoteTime: 0.1,
   jumpBuffer: 0.12,
   // Dash goes where the camera aims (pitch included); ~11.5 m per dash.
@@ -76,8 +94,6 @@ export const PLAYER = {
   dashTime: 0.24,
   dashCooldown: 0.55,
   dashInvuln: 0.3,
-  /** Dashes allowed per airtime (reset on landing or grabbing vines). */
-  airDashes: 1,
   /** Max dash elevation (radians) up or down (~83°). */
   dashMaxPitch: 1.45,
   // Glide (hold in the air): slow descent, steerable. Looking down dives (faster, steeper);

@@ -6,7 +6,8 @@ import {
   BOSS,
   createFight,
   heuristicBrain,
-  PLAYER_HP,
+  STAMINA,
+  VITALS,
   stepFight,
   type Brain,
   type FightEvent,
@@ -18,6 +19,7 @@ import {
   moverSolid,
   mulberry32,
   NO_INPUT,
+  PLAYER,
   raycast,
   SIM_DT,
   solidTop,
@@ -75,7 +77,7 @@ check('idle stays grounded', idle.p.onGround && Math.abs(idle.p.pos.z - 30) < 0.
 const run = sim(60, () => ({ moveZ: -1 }));
 check('run speed ~10', Math.abs(maxOf(run.frames, hspeed) - 10) < 0.5, maxOf(run.frames, hspeed).toFixed(1));
 const sprint = sim(60, () => ({ moveZ: -1, sprint: true }));
-check('sprint speed ~16', Math.abs(maxOf(sprint.frames, hspeed) - 16) < 0.5);
+check('sprint speed ~22', Math.abs(maxOf(sprint.frames, hspeed) - 22) < 0.5, maxOf(sprint.frames, hspeed).toFixed(1));
 
 const jump = sim(120, t => ({ jump: t === 0 }));
 const jumpHeight = maxOf(jump.frames, f => f.aboveGround);
@@ -128,8 +130,22 @@ check('ground dash cannot aim into floor', groundDown.frames.every(f => f.onGrou
 const downDash = sim(120, t => ({ jump: t === 0, dash: t === 20, aimZ: -1, aimPitch: -1 }));
 const dLand = firstLanding(downDash.frames, 21);
 check('down-dash slams and ends on landing', dLand > 0 && dLand < 30 && !downDash.frames[dLand].dashing, `landed tick ${dLand}`);
-const limit = sim(80, t => ({ jump: t === 0 || t === 20, dash: t === 3 || t === 45, aimZ: -1, aimPitch: 0.3 }));
-check('one air-dash per airtime', !limit.frames[46].onGround && !limit.frames[46].dashing);
+// Stamina: no fixed air-jump/air-dash charges — everything is paid for with stamina.
+const airJumps = sim(150, t => ({ jump: t % 25 === 0 }));
+check('air jumps chain until stamina runs out (10 + 5×16 = 90)', airJumps.p.airJumpCount === 5, `${airJumps.p.airJumpCount} air jumps`);
+let dashesStarted = 0;
+sim(140, (t, p) => {
+  if (p.dashTimer > PLAYER.dashTime - SIM_DT * 1.5) dashesStarted++;
+  return { dash: t % 34 === 0, aimZ: -1, aimPitch: 0.4 };
+});
+check('dashes chain (ground or air) until stamina runs out (4 × 22)', dashesStarted === 4, `${dashesStarted} dashes`);
+const drain = sim(60 * 7, () => ({ moveZ: -1, sprint: true }), { start: { x: 0, z: 0 }, setup: p => (p.pos = { x: -60, y: heightAt(-60, -60), z: 80 }) });
+check('sprint drains stamina, then falls back to run speed', drain.p.stamina === 0 && Math.abs(hspeed(drain.frames[drain.frames.length - 1]) - PLAYER.runSpeed) < 0.5,
+  `stamina ${drain.p.stamina.toFixed(1)}, speed ${hspeed(drain.frames[drain.frames.length - 1]).toFixed(1)}`);
+const regen = sim(60 * 4, () => ({}), { setup: p => (p.stamina = 0) });
+check('stamina regenerates to full within ~4 s', regen.p.stamina === STAMINA.max, `${regen.p.stamina.toFixed(1)}`);
+const exhausted = sim(60, t => ({ jump: t === 0, dash: t === 0 }), { setup: p => (p.stamina = 5) });
+check('no stamina: no jump, no dash', exhausted.frames.every(f => f.onGround && !f.dashing));
 
 const rim = sim(900, () => ({ moveZ: 1, sprint: true }));
 check('arena boundary holds', Math.hypot(rim.p.pos.x, rim.p.pos.z) <= ARENA_WALK_RADIUS + 1e-6);
@@ -249,20 +265,27 @@ const armIs = (attack: string, aim = 'direct'): Brain => (_f, _a, valid) => vali
 const alwaysAttack: Brain = (_f, _a, valid) => valid.find(i => ARMS[i].kind === 'attack') ?? valid[0];
 
 const idleInCorridor = runFight(30, () => ({}));
-check('Skynet hits an idle player standing in a corridor', idleInCorridor.f.playerHp < PLAYER_HP, `HP ${idleInCorridor.f.playerHp.toFixed(0)}, ${idleInCorridor.f.decisions.length} decisions`);
+check('Skynet hits an idle player standing in a corridor', idleInCorridor.f.armor + idleInCorridor.f.health < VITALS.armor + VITALS.health, `armor ${idleInCorridor.f.armor.toFixed(0)} health ${idleInCorridor.f.health.toFixed(0)}, ${idleInCorridor.f.decisions.length} decisions`);
 
-const spam = runFight(60, () => ({}), { brain: alwaysAttack, setup: f => (f.playerHp = 1e9) });
+const firstHit = runFight(10, () => ({}), { brain: armIs('volley') });
+const hit = firstHit.events.find(e => e.type === 'playerHit');
+check('armor absorbs damage before health', hit?.type === 'playerHit' && hit.armor > 0 && hit.health === 0, hit?.type === 'playerHit' ? `first hit: ${hit.armor} armor, ${hit.health} health` : 'no hit');
+const waitBrain: Brain = () => 0;
+const recover = runFight(12, () => ({}), { brain: waitBrain, setup: f => { f.armor = 10; f.health = 60; f.armorDelay = 4; } });
+check('armor regenerates, health does not', recover.f.armor === VITALS.armor && recover.f.health === 60, `armor ${recover.f.armor.toFixed(1)}, health ${recover.f.health}`);
+
+const spam = runFight(60, () => ({}), { brain: alwaysAttack, setup: f => (f.health = 1e9) });
 const attacks = spam.f.decisions.filter(d => ARMS[d.arm].kind === 'attack').length;
 check('energy caps attack rate (always-attack brain, 60 s)', attacks <= 32 && spam.minEnergy >= 0, `${attacks} attacks, min energy ${spam.minEnergy.toFixed(1)}`);
 
 const coverArena: Arena = { ...EMPTY_ARENA, skynetAnchor: { x: 0, y: 25, z: 0 }, spawn: { x: 0, z: 30 }, statics: [makeBox('wall', 0, 26, 8, 0.6, 0, -5, heightAt(0, 26) + 12)] };
 const behindWall = runFight(20, () => ({}), { arena: coverArena, brain: armIs('volley') });
-check('walls block Skynet\'s bolts', behindWall.f.playerHp === PLAYER_HP && behindWall.events.some(e => e.type === 'impact'), `HP ${behindWall.f.playerHp}`);
+check('walls block Skynet\'s bolts', behindWall.f.armor === VITALS.armor && behindWall.events.some(e => e.type === 'impact'), `armor ${behindWall.f.armor}`);
 const mortarOver = runFight(20, () => ({}), { arena: coverArena, brain: armIs('mortar') });
-check('mortar shells arc over walls', mortarOver.f.playerHp < PLAYER_HP, `HP ${mortarOver.f.playerHp.toFixed(0)}`);
+check('mortar shells arc over walls', mortarOver.f.armor < VITALS.armor, `armor ${mortarOver.f.armor.toFixed(0)} health ${mortarOver.f.health.toFixed(0)}`);
 
 const dodging = runFight(20, f => ((f.player.invuln = 1), {}), { brain: armIs('volley') });
-check('dash i-frames dodge attacks', dodging.f.playerHp === PLAYER_HP && dodging.events.some(e => e.type === 'dodged'));
+check('dash i-frames dodge attacks', dodging.f.armor === VITALS.armor && dodging.events.some(e => e.type === 'dodged'));
 
 const swordSetup = (f: Fight) => {
   f.boss.cooldown = 1e9;
@@ -292,13 +315,13 @@ check('Dive Slam lands and leaves Skynet stunned (1.5x damage)', diveFight.event
 
 const win = runFight(1, (_f, t) => ({ attack: t === 0, aimZ: -1 }), { setup: f => { swordSetup(f); f.boss.hp = 10; } });
 check('defeating Skynet wins the fight', win.f.outcome === 'won' && win.events.some(e => e.type === 'won'));
-const lose = runFight(30, () => ({}), { setup: f => (f.playerHp = 1) });
+const lose = runFight(30, () => ({}), { setup: f => { f.health = 1; f.armor = 0; } });
 check('running out of HP loses the fight', lose.f.outcome === 'lost' && lose.events.some(e => e.type === 'lost'));
 
 const runA = runFight(20, (_f, t) => ({ moveX: Math.sin(t / 40), moveZ: -1, dash: t % 50 === 0, aimZ: -1 }));
 const runB = runFight(20, (_f, t) => ({ moveX: Math.sin(t / 40), moveZ: -1, dash: t % 50 === 0, aimZ: -1 }));
-check('fights are deterministic', runA.f.playerHp === runB.f.playerHp && runA.f.decisions.length === runB.f.decisions.length && runA.f.player.pos.x === runB.f.player.pos.x,
-  `HP ${runA.f.playerHp.toFixed(1)}, ${runA.f.decisions.length} decisions`);
+check('fights are deterministic', runA.f.health === runB.f.health && runA.f.armor === runB.f.armor && runA.f.decisions.length === runB.f.decisions.length && runA.f.player.pos.x === runB.f.player.pos.x,
+  `health ${runA.f.health.toFixed(1)}, ${runA.f.decisions.length} decisions`);
 
 let failed = 0;
 for (const [name, ok, detail] of checks) {

@@ -13,9 +13,10 @@ import {
   lerp,
   NO_INPUT,
   PLAYER,
-  PLAYER_HP,
   raycast,
   SIM_DT,
+  STAMINA,
+  VITALS,
   stepFight,
   type PlayerInput,
   type Vec3,
@@ -84,7 +85,13 @@ const ui = {
   bossHp: el('boss-hp'),
   bossEnergy: el('boss-energy'),
   bossState: el('boss-state'),
-  playerHp: el('player-hp'),
+  armor: el('player-armor'),
+  armorText: el('armor-text'),
+  health: el('player-health'),
+  healthText: el('health-text'),
+  stamina: el('player-stamina'),
+  staminaText: el('stamina-text'),
+  staminaRow: el('stamina-row'),
   vignette: el('vignette'),
   result: el('result'),
   resultTitle: el('result-title'),
@@ -219,7 +226,13 @@ renderer.setAnimationLoop(() => {
   const arm = b.arm >= 0 ? ARMS[b.arm] : null;
   const stunned = b.phase === 'recover' && arm?.kind === 'attack' && arm.attack === 'dive';
   ui.bossState.textContent = stunned ? 'STUNNED â€” STRIKE NOW' : (BOSS_STATE_LABEL[b.phase] ?? '');
-  ui.playerHp.style.width = `${(fight.playerHp / PLAYER_HP) * 100}%`;
+  ui.armor.style.width = `${(fight.armor / VITALS.armor) * 100}%`;
+  ui.armorText.textContent = `${Math.ceil(fight.armor)}`;
+  ui.health.style.width = `${(fight.health / VITALS.health) * 100}%`;
+  ui.healthText.textContent = `${Math.ceil(fight.health)}`;
+  ui.stamina.style.width = `${(player.stamina / STAMINA.max) * 100}%`;
+  ui.staminaText.textContent = `${Math.floor(player.stamina)}`;
+  ui.staminaRow.classList.toggle('low', player.stamina < STAMINA.dashCost);
   hurtFlash = Math.max(0, hurtFlash - frameDt * 2.5);
   ui.vignette.style.opacity = String(hurtFlash);
   ui.result.classList.toggle('hidden', fight.outcome === 'active');

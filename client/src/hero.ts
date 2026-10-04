@@ -285,7 +285,7 @@ export function createHero(): Hero {
   let wingOpen = 0;
   let flipT = 0;
   let landT = 0;
-  let prevAirJumps = PLAYER.airJumps;
+  let prevAirJumps = 0;
   let prevOnGround = true;
 
   function targetPose(p: PlayerState, time: number): Pose {
@@ -367,9 +367,9 @@ export function createHero(): Hero {
     update(p, dt, time) {
       const hs = Math.hypot(p.vel.x, p.vel.z);
       phase += (dt * hs * Math.PI * 2) / (2.2 + hs * 0.15);
-      if (p.airJumpsLeft < prevAirJumps) flipT = FLIP_TIME;
+      if (p.airJumpCount !== prevAirJumps) flipT = FLIP_TIME;
       if (p.onGround && !prevOnGround) landT = LAND_TIME;
-      prevAirJumps = p.airJumpsLeft;
+      prevAirJumps = p.airJumpCount;
       prevOnGround = p.onGround;
       flipT = Math.max(0, flipT - dt);
       landT = Math.max(0, landT - dt);

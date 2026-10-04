@@ -1,5 +1,5 @@
 import { moverOffset, moverSolid, solidTop, type Arena, type Solid } from './arena';
-import { ARENA_WALK_RADIUS, PLAYER, SWORD } from './config';
+import { ARENA_WALK_RADIUS, PLAYER, STAMINA, SWORD } from './config';
 import { approachAngle, clamp, vec3, type Vec3 } from './math';
 import { heightAt } from './terrain';
 
@@ -31,8 +31,12 @@ export interface PlayerState {
   /** Facing angle around Y; 0 faces +Z. */
   yaw: number;
   onGround: boolean;
-  airJumpsLeft: number;
-  airDashesLeft: number;
+  /** Gates sprinting, jumping, and dashing. */
+  stamina: number;
+  /** Seconds until stamina starts regenerating. */
+  staminaDelay: number;
+  /** Increments on every air jump (lets the renderer play the flip). */
+  airJumpCount: number;
   coyote: number;
   jumpBuffer: number;
   dashTimer: number;
@@ -65,8 +69,9 @@ export function createPlayer(x: number, z: number): PlayerState {
     vel: vec3(),
     yaw: Math.atan2(-x, -z),
     onGround: true,
-    airJumpsLeft: PLAYER.airJumps,
-    airDashesLeft: PLAYER.airDashes,
+    stamina: STAMINA.max,
+    staminaDelay: 0,
+    airJumpCount: 0,
     coyote: 0,
     jumpBuffer: 0,
     dashTimer: 0,
@@ -108,9 +113,12 @@ function launch(p: PlayerState, dirX: number, dirZ: number, hasMove: boolean, vy
   p.dashTimer = 0;
 }
 
-function refillAirMoves(p: PlayerState): void {
-  p.airJumpsLeft = PLAYER.airJumps;
-  p.airDashesLeft = PLAYER.airDashes;
+/** Spend stamina if there's enough; pauses regeneration. */
+function spendStamina(p: PlayerState, cost: number): boolean {
+  if (p.stamina < cost) return false;
+  p.stamina -= cost;
+  p.staminaDelay = STAMINA.regenDelay;
+  return true;
 }
 
 /** Is (x, z) over the solid's footprint (with `margin` of overhang allowed)? */
@@ -206,7 +214,8 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
   const dirX = hasMove ? input.moveX / moveLen : 0;
   const dirZ = hasMove ? input.moveZ / moveLen : 0;
 
-  if (input.dash && p.dashCooldown <= 0 && (p.onGround || p.climbing || p.airDashesLeft > 0)) {
+  // Dashes: unlimited (ground or air) as long as stamina lasts; the cooldown stops spamming.
+  if (input.dash && p.dashCooldown <= 0 && spendStamina(p, STAMINA.dashCost)) {
     // Horizontal heading: move input, else camera aim, else facing.
     let hx = Math.sin(p.yaw);
     let hz = Math.cos(p.yaw);
@@ -224,7 +233,6 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.dashDir.x = hx * cp;
     p.dashDir.y = Math.sin(pitch);
     p.dashDir.z = hz * cp;
-    if (!p.onGround && !p.climbing) p.airDashesLeft--;
     p.climbing = false;
     p.dashTimer = PLAYER.dashTime;
     p.dashCooldown = PLAYER.dashCooldown;
@@ -233,7 +241,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
 
   if (p.climbing) {
     const into = -(dirX * p.wallNX + dirZ * p.wallNZ);
-    if (p.jumpBuffer > 0) {
+    if (p.jumpBuffer > 0 && spendStamina(p, STAMINA.jumpCost)) {
       // Wall jump: kick away from the surface.
       p.vel.x = p.wallNX * PLAYER.wallJumpOut;
       p.vel.z = p.wallNZ * PLAYER.wallJumpOut;
@@ -264,6 +272,13 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
   p.gliding = input.glide && !p.onGround && !p.climbing && p.dashTimer <= 0;
   const hs = Math.hypot(p.vel.x, p.vel.z);
   let maxFall = Infinity;
+  // Sprinting drains stamina on the ground; with none left you drop back to running speed.
+  const canSprint = input.sprint && p.stamina > 0;
+  const sprinting = canSprint && hasMove && p.onGround && !p.climbing && p.dashTimer <= 0;
+  if (sprinting) {
+    p.stamina = Math.max(0, p.stamina - STAMINA.sprintDrain * dt);
+    p.staminaDelay = STAMINA.regenDelay;
+  }
 
   if (p.dashTimer > 0) {
     p.dashTimer -= dt;
@@ -273,7 +288,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.vel.y = p.dashDir.y * speed;
     p.vel.z = p.dashDir.z * speed;
   } else if (p.onGround && !p.climbing) {
-    const speed = (input.sprint ? PLAYER.sprintSpeed : PLAYER.runSpeed) * (p.swingTimer > 0 ? SWORD.moveScale : 1);
+    const speed = (canSprint ? PLAYER.sprintSpeed : PLAYER.runSpeed) * (p.swingTimer > 0 ? SWORD.moveScale : 1);
     steer(dirX * speed, dirZ * speed, PLAYER.groundAccel);
   } else if (p.gliding) {
     const dive = Math.max(0, -input.aimPitch);
@@ -285,7 +300,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
   } else if (!p.climbing && hasMove && p.mantle <= 0) {
     // Air control: rotate velocity toward the input (no momentum loss through the turn) and
     // build up to run/sprint speed if slower.
-    const speed = Math.min(Math.max(hs, input.sprint ? PLAYER.sprintSpeed : PLAYER.runSpeed), PLAYER.maxAirSpeed);
+    const speed = Math.min(Math.max(hs, canSprint ? PLAYER.sprintSpeed : PLAYER.runSpeed), PLAYER.maxAirSpeed);
     if (hs < 1) {
       steer(dirX * speed, dirZ * speed, PLAYER.airAccel);
     } else {
@@ -301,13 +316,16 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.vel.y = Math.max(p.vel.y, -maxFall);
   }
 
+  // Jumps cost stamina; air jumps are unlimited while it lasts.
   if (p.jumpBuffer > 0 && !p.climbing) {
     if (p.onGround || p.coyote > 0) {
-      launch(p, dirX, dirZ, hasMove, PLAYER.jumpSpeed, PLAYER.jumpBoost);
-      p.coyote = 0;
-    } else if (p.airJumpsLeft > 0) {
+      if (spendStamina(p, STAMINA.jumpCost)) {
+        launch(p, dirX, dirZ, hasMove, PLAYER.jumpSpeed, PLAYER.jumpBoost);
+        p.coyote = 0;
+      }
+    } else if (spendStamina(p, STAMINA.airJumpCost)) {
       launch(p, dirX, dirZ, hasMove, PLAYER.jumpSpeed * PLAYER.airJumpSpeedScale, 1);
-      p.airJumpsLeft--;
+      p.airJumpCount++;
     }
   }
 
@@ -340,7 +358,6 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
 
   // Classify each solid by where we were last tick: above it (floor), below it (ceiling), or
   // beside it (wall).
-  const wasClimbing = p.climbing;
   p.climbing = false;
   let climbTop = 0;
   for (const { s, prevTop, prevBottom } of solids) {
@@ -369,7 +386,6 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
       p.wallNX = hit.nx;
       p.wallNZ = hit.nz;
       climbTop = top;
-      if (!wasClimbing) refillAirMoves(p);
     }
   }
 
@@ -404,7 +420,6 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.onGround = true;
     p.gliding = false;
     p.mover = supportMover;
-    refillAirMoves(p);
     p.coyote = PLAYER.coyoteTime;
   } else {
     p.onGround = false;
@@ -417,5 +432,11 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.yaw = approachAngle(p.yaw, Math.atan2(p.vel.x, p.vel.z), PLAYER.turnRate * dt);
   } else if (p.climbing) {
     p.yaw = Math.atan2(-p.wallNX, -p.wallNZ);
+  }
+
+  // Stamina regenerates quickly after a short pause (none while sprinting).
+  if (!sprinting) {
+    p.staminaDelay = Math.max(0, p.staminaDelay - dt);
+    if (p.staminaDelay <= 0) p.stamina = Math.min(STAMINA.max, p.stamina + STAMINA.regen * dt);
   }
 }
