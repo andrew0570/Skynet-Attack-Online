@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { ARENA_RADIUS, heightAt, smoothstep, type Vec3 } from '@sao/sim';
+import { ARENA_RADIUS, ARMS, ATTACKS, heightAt, smoothstep, type AttackId, type BossState, type Vec3 } from '@sao/sim';
 
 const SKY = 0x1a0b08;
 
@@ -52,26 +52,57 @@ function createTerrain(): THREE.Mesh {
   );
 }
 
-/** Skynet's core, hovering over the pillar at `anchor`. */
-export function createSkynet(anchor: Vec3): { group: THREE.Group; animate: (t: number) => void } {
+export interface SkynetVisual {
+  group: THREE.Group;
+  /** Flash the core white (call on hit). */
+  flash(): void;
+  /** `pos` is the interpolated sim position; `boss` drives charge/stun/sweep visuals. */
+  animate(t: number, dt: number, pos: Vec3, boss: BossState): void;
+}
+
+/** Skynet: a glowing red core with an orbiting blade ring, driven by the fight sim. */
+export function createSkynet(): SkynetVisual {
   const group = new THREE.Group();
-  const core = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(1.6, 0),
-    new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2200, emissiveIntensity: 7, flatShading: true })
-  );
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(3.2, 0.12, 8, 48),
-    new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.9, roughness: 0.3 })
-  );
-  group.add(core, ring, new THREE.PointLight(0xff3311, 120, 60));
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2200, emissiveIntensity: 7, flatShading: true });
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.6, 0), coreMat);
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.9, roughness: 0.3, emissive: 0xff2200, emissiveIntensity: 0 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.12, 8, 48), ringMat);
+  const light = new THREE.PointLight(0xff3311, 120, 60);
+  group.add(core, ring, light);
   group.scale.setScalar(2);
-  group.position.set(anchor.x, anchor.y, anchor.z);
+
+  let flash = 0;
+  let ringSpin = 0;
+  const red = new THREE.Color(0xff2200);
+  const white = new THREE.Color(0xffffff);
   return {
     group,
-    animate(t: number) {
+    flash() {
+      flash = 0.12;
+    },
+    animate(t, dt, pos, boss) {
+      flash = Math.max(0, flash - dt);
+      const attack = boss.arm >= 0 && ARMS[boss.arm].kind === 'attack' ? (ARMS[boss.arm] as { attack: AttackId }).attack : null;
+      const stunned = boss.phase === 'recover' && attack === 'dive';
+      const perched = boss.phase === 'idle' || ((boss.phase === 'telegraph' || boss.phase === 'recover') && attack !== 'dive');
+
+      // Core brightness: charges during telegraphs, sputters while stunned.
+      let intensity = 5;
+      if (boss.phase === 'telegraph') intensity = 8 + 5 * (1 - boss.timer / ATTACKS[attack!].telegraph) + Math.sin(t * 40) * 1.2;
+      if (stunned) intensity = 1.5 + (Math.sin(t * 23) > 0.6 ? 4 : 0);
+      coreMat.emissive.copy(flash > 0 ? white : red);
+      coreMat.emissiveIntensity = flash > 0 ? 12 : intensity;
+      light.intensity = 60 + intensity * 8;
+
+      // Blade ring spins up for the sweep and glows.
+      const sweeping = attack === 'sweep' && (boss.phase === 'telegraph' || boss.phase === 'active');
+      ringSpin += dt * (sweeping ? 18 : stunned ? 0.5 : 2);
+      ringMat.emissiveIntensity = sweeping ? 4 : 0;
+      ring.rotation.set(Math.PI / 2 + (stunned ? 0.8 : Math.sin(t) * 0.3), 0, ringSpin);
+      ring.scale.setScalar(attack === 'sweep' && boss.phase === 'active' ? 1.35 : 1);
+
       core.rotation.set(t * 0.7, t * 1.1, 0);
-      ring.rotation.set(Math.PI / 2 + Math.sin(t) * 0.3, 0, t * 2);
-      group.position.y = anchor.y + Math.sin(t * 1.5) * 0.6;
+      group.position.set(pos.x, pos.y + (perched ? Math.sin(t * 1.5) * 0.6 : 0), pos.z);
     },
   };
 }

@@ -8,5 +8,6 @@ export * from './rng';
 export * from './terrain';
 export * from './arena';
 export * from './player';
+export * from './combat';
 
 export const BOSS_NAME = 'Skynet';

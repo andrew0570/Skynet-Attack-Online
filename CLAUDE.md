@@ -70,7 +70,9 @@ Schedule and done-criteria: [docs/milestones.md](docs/milestones.md).
 ## Architecture
 - **Simulation (`sim/`, package `@sao/sim`)**: pure TypeScript game logic — terrain, arena
   generation + collision + `raycast` (line of sight), player controller, and (M3+) Skynet,
-  moves, damage, features, bandit decision. `stepPlayer(p, input, dt, arena, time)`. **No Three.js, DOM, or Node imports**, so the same
+  moves, damage, features, bandit decision. `stepPlayer(p, input, dt, arena, time)`;
+  the whole fight advances via `stepFight(fight, arena, input, dt, brain)` (combat.ts), which
+  returns events the client turns into VFX. `Brain = (fight, arena, validArms) => armIndex`. **No Three.js, DOM, or Node imports**, so the same
   code runs in the browser, the bot trainer, and (for co-op) the SpacetimeDB module. Keep it
   **tick-based** (`step(state, inputs, dt)`) and free of wall-clock/`Math.random` calls
   (pass in an RNG) so the server can own the sim later.
@@ -130,7 +132,7 @@ Run from the repo root after `. .\env.ps1`:
 | `npm run db:publish` | Build + publish `server/` to local DB `skynet-attack-online` |
 | `npm run db:generate` | Regenerate client bindings |
 | `npm run db:logs` | Module logs |
-| `npm run dev` | Client dev server → http://localhost:5173 |
+| `npm run dev` | Client dev server → http://localhost:5173 (hot reload is OFF — refresh manually; see `client/vite.config.ts`) |
 | `npm run build` | Type-check (client + sim) + production build of the client |
 | `npm run sim:smoke` | Headless movement checks for `sim/` (run after touching `sim/`) |
 | `npx tsc --noEmit -p server` | Type-check the server module (`spacetime build` skips it) |

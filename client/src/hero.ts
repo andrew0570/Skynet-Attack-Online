@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, PLAYER, type PlayerState } from '@sao/sim';
+import { clamp, PLAYER, SWORD, type PlayerState } from '@sao/sim';
 
 // Procedural armored space hero. Origin at the feet, facing +Z (its right hand is on -X).
 // Purely cosmetic: all gameplay (hitboxes, timings) lives in sim/.
@@ -61,9 +61,40 @@ function createSword(): THREE.Group {
   sheath.rotation.x = Math.PI / 2;
   sheath.position.z = blade.position.z;
   const sword = joint(0, -0.05, 0.02, hilt, guard, emitter, blade, sheath);
-  // Low ready stance: blade forward-down and slightly out to the hero's right.
-  sword.rotation.set(1.45, -0.35, 0);
+  sword.rotation.set(SWORD_READY.x, SWORD_READY.y, 0);
   return sword;
+}
+
+/** Low ready stance: blade forward-down and slightly out to the hero's right. */
+const SWORD_READY = { x: 1.45, y: -0.35 };
+/** While swinging the blade extends along the arm (slightly forward). */
+const SWORD_SWING = { x: Math.PI / 2 - 0.25, y: 0 };
+
+/**
+ * Swing arcs per combo step: right-arm shoulder angles from → to, plus torso twist.
+ * 0: forehand slash right→left · 1: backhand left→right · 2: overhead chop.
+ */
+const SWINGS = [
+  { sx: [-1.35, -1.35], sz: [-1.4, 0.7], twist: [-0.55, 0.5] },
+  { sx: [-1.35, -1.35], sz: [0.7, -1.4], twist: [0.5, -0.55] },
+  { sx: [-2.9, -0.35], sz: [-0.15, -0.15], twist: [0, 0] },
+];
+
+/** Crescent light trail for each swing (horizontal arcs in front; vertical arc for the chop). */
+function createTrails(): THREE.Mesh[] {
+  const mk = (geo: THREE.BufferGeometry) => {
+    const m = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({ color: CYAN.clone().multiplyScalar(2.5), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
+    );
+    m.position.y = 1.25;
+    m.visible = false;
+    return m;
+  };
+  // RingGeometry lies in XY with theta from +X toward +Y. Rotated into XZ, -π/2 is straight ahead.
+  const flat = () => new THREE.RingGeometry(0.7, 2.6, 24, 1, -Math.PI / 2 - 1.15, 2.3).rotateX(-Math.PI / 2);
+  const vertical = new THREE.RingGeometry(0.7, 2.6, 24, 1, -0.7, 2.4).rotateY(-Math.PI / 2);
+  return [mk(flat()), mk(flat()), mk(vertical)];
 }
 
 interface Arm {
@@ -181,7 +212,9 @@ export interface Hero {
 export function createHero(): Hero {
   const left = createArm(1);
   const right = createArm(-1);
-  right.hand.add(createSword());
+  const sword = createSword();
+  right.hand.add(sword);
+  const trails = createTrails();
   const legs = [createLeg(1), createLeg(-1)];
   const arms = [left, right];
 
@@ -239,7 +272,10 @@ export function createHero(): Hero {
     ...legs.map(l => l.hip)
   );
   const group = new THREE.Group();
-  group.add(body);
+  group.add(body, ...trails);
+  let lastSwing = 0;
+  let trailLife = 0;
+  let trailIndex = 0;
 
   const cur: Pose = {
     bodyY: 0, bodyPitch: 0, torsoPitch: 0,
@@ -357,6 +393,7 @@ export function createHero(): Hero {
       body.position.y = 0.95 + cur.bodyY;
       body.rotation.x = cur.bodyPitch + flip;
       torso.rotation.x = cur.torsoPitch;
+      torso.rotation.y = 0;
       for (let i = 0; i < 2; i++) {
         legs[i].hip.rotation.x = cur.hip[i];
         legs[i].knee.rotation.x = cur.knee[i];
@@ -364,6 +401,30 @@ export function createHero(): Hero {
         arms[i].shoulder.rotation.z = cur.shoulderZ[i];
         arms[i].elbow.rotation.x = cur.elbow[i];
       }
+
+      // Sword swings override the sword arm directly (too fast to blend).
+      if (p.swingCount !== lastSwing) {
+        lastSwing = p.swingCount;
+        trailIndex = p.comboStep;
+        trailLife = 0.2;
+      }
+      if (p.swingTimer > 0) {
+        const s = SWINGS[p.comboStep];
+        const k = 1 - p.swingTimer / SWORD.swingTime;
+        const e = k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k);
+        right.shoulder.rotation.x = s.sx[0] + (s.sx[1] - s.sx[0]) * e;
+        right.shoulder.rotation.z = s.sz[0] + (s.sz[1] - s.sz[0]) * e;
+        right.elbow.rotation.x = -0.15;
+        torso.rotation.y = s.twist[0] + (s.twist[1] - s.twist[0]) * e;
+        sword.rotation.set(SWORD_SWING.x, SWORD_SWING.y, 0);
+      } else {
+        sword.rotation.set(SWORD_READY.x, SWORD_READY.y, 0);
+      }
+      trailLife = Math.max(0, trailLife - dt);
+      trails.forEach((t, i) => {
+        t.visible = i === trailIndex && trailLife > 0;
+        (t.material as THREE.MeshBasicMaterial).opacity = (trailLife / 0.2) * 0.85;
+      });
 
       // Wings: unfold fast when a glide starts, fold a bit slower after.
       const wingTarget = p.gliding ? 1 : 0;

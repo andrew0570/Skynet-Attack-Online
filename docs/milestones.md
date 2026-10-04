@@ -23,7 +23,10 @@ Q / right-click dash. Tunables in `sim/src/config.ts` (`PLAYER`).
 Armored hero + laser sword + bloom; 100 m maze arena with pillar, vines, moving platforms,
 collision, camera wall-avoidance, `raycast` line of sight. Schedule below shifted to match.
 
-## M3 — Skynet + combat loop · 10:00 PM → 12:30 AM
+## M3 — Skynet + combat loop · 10:00 PM → 12:30 AM ✅ (done ~10:55 PM)
+Built: `sim/src/combat.ts` (fight state, Skynet energy + 17-arm action space, 4 projectile and
+2 melee attacks, sword combo, decision log), combat VFX + HUD + restart on the client.
+Placeholder `heuristicBrain` picks arms until M4 swaps in the learned policy.
 Arena-aware design: Skynet perches above the pillar; ranged moves (Volley) are blocked by walls
 via `raycast`; Lunge/Slam bring it down to the target, opening a window to strike. Sword
 swing trail lands here too.

@@ -2,6 +2,14 @@
 // Usage: npm run sim:smoke
 import {
   ARENA_WALK_RADIUS,
+  ARMS,
+  BOSS,
+  createFight,
+  heuristicBrain,
+  PLAYER_HP,
+  stepFight,
+  type Brain,
+  type FightEvent,
   createPlayer,
   EMPTY_ARENA,
   generateArena,
@@ -222,6 +230,75 @@ check('glade ramp leads onto level 1', rampUp.p.onGround && rampUp.p.pos.y > 6.5
 const pillarTop = solidTop(arena.pillar!);
 const pillarClimb = sim(360, (_, p) => (p.onGround && p.pos.y > pillarTop - 0.1 ? {} : { moveZ: -1 }), { arena, start: { x: 0, z: 4.5 } });
 check('climb the central pillar to the top', pillarClimb.p.onGround && Math.abs(pillarClimb.p.pos.y - pillarTop) < 1e-6, `y=${pillarClimb.p.pos.y.toFixed(1)} top=${pillarTop.toFixed(1)}`);
+
+// ---------- Combat ----------
+type Fight = ReturnType<typeof createFight>;
+function runFight(seconds: number, input: (f: Fight, tick: number) => Partial<PlayerInput>, opts: { arena?: Arena; brain?: Brain; setup?: (f: Fight) => void; seed?: number } = {}) {
+  const a = opts.arena ?? arena;
+  const f = createFight(a, opts.seed ?? 7);
+  opts.setup?.(f);
+  const events: FightEvent[] = [];
+  let minEnergy = Infinity;
+  for (let i = 0; i < seconds * 60; i++) {
+    events.push(...stepFight(f, a, { ...NO_INPUT, ...input(f, i) }, SIM_DT, opts.brain ?? heuristicBrain));
+    minEnergy = Math.min(minEnergy, f.boss.energy);
+  }
+  return { f, events, minEnergy };
+}
+const armIs = (attack: string, aim = 'direct'): Brain => (_f, _a, valid) => valid.find(i => { const arm = ARMS[i]; return arm.kind === 'attack' && arm.attack === attack && arm.aim === aim; }) ?? valid[0];
+const alwaysAttack: Brain = (_f, _a, valid) => valid.find(i => ARMS[i].kind === 'attack') ?? valid[0];
+
+const idleInCorridor = runFight(30, () => ({}));
+check('Skynet hits an idle player standing in a corridor', idleInCorridor.f.playerHp < PLAYER_HP, `HP ${idleInCorridor.f.playerHp.toFixed(0)}, ${idleInCorridor.f.decisions.length} decisions`);
+
+const spam = runFight(60, () => ({}), { brain: alwaysAttack, setup: f => (f.playerHp = 1e9) });
+const attacks = spam.f.decisions.filter(d => ARMS[d.arm].kind === 'attack').length;
+check('energy caps attack rate (always-attack brain, 60 s)', attacks <= 32 && spam.minEnergy >= 0, `${attacks} attacks, min energy ${spam.minEnergy.toFixed(1)}`);
+
+const coverArena: Arena = { ...EMPTY_ARENA, skynetAnchor: { x: 0, y: 25, z: 0 }, spawn: { x: 0, z: 30 }, statics: [makeBox('wall', 0, 26, 8, 0.6, 0, -5, heightAt(0, 26) + 12)] };
+const behindWall = runFight(20, () => ({}), { arena: coverArena, brain: armIs('volley') });
+check('walls block Skynet\'s bolts', behindWall.f.playerHp === PLAYER_HP && behindWall.events.some(e => e.type === 'impact'), `HP ${behindWall.f.playerHp}`);
+const mortarOver = runFight(20, () => ({}), { arena: coverArena, brain: armIs('mortar') });
+check('mortar shells arc over walls', mortarOver.f.playerHp < PLAYER_HP, `HP ${mortarOver.f.playerHp.toFixed(0)}`);
+
+const dodging = runFight(20, f => ((f.player.invuln = 1), {}), { brain: armIs('volley') });
+check('dash i-frames dodge attacks', dodging.f.playerHp === PLAYER_HP && dodging.events.some(e => e.type === 'dodged'));
+
+const swordSetup = (f: Fight) => {
+  f.boss.cooldown = 1e9;
+  f.boss.pos = { x: f.player.pos.x, y: f.player.pos.y + 1.1, z: f.player.pos.z - 4 };
+};
+const combo = runFight(2, (_f, t) => ({ attack: t === 0 || t === 20 || t === 40, aimZ: -1 }), { setup: swordSetup });
+check('sword 3-hit combo damages Skynet (28 + 28 + 44)', combo.f.boss.hp === BOSS.maxHp - 100, `HP ${combo.f.boss.hp}`);
+const whiff = runFight(1, (_f, t) => ({ attack: t === 0, aimZ: 1 }), { setup: swordSetup });
+check('sword misses when facing away', whiff.f.boss.hp === BOSS.maxHp);
+
+// Dive slam, then punish while Skynet is stunned on the ground.
+let stunHit = 0;
+const diveFight = runFight(8, (f, t) => {
+  const b = f.boss;
+  if (b.phase === 'recover' && !stunHit) {
+    // Stand next to the landed boss and swing at it.
+    f.player.pos = { x: b.pos.x, y: heightAt(b.pos.x, b.pos.z), z: b.pos.z + 3.5 };
+    f.hurt = 1;
+    stunHit = t;
+    return { attack: true, aimZ: -1 };
+  }
+  return {};
+}, { brain: armIs('dive'), setup: f => { f.player.pos = { x: 0, y: heightAt(0, 40), z: 40 }; f.boss.energy = 100; f.boss.cooldown = 0; } });
+const stunDamage = diveFight.events.find(e => e.type === 'bossHit');
+check('Dive Slam lands and leaves Skynet stunned (1.5x damage)', diveFight.events.some(e => e.type === 'slam') && stunDamage?.type === 'bossHit' && stunDamage.stunned && stunDamage.damage === 42,
+  stunDamage?.type === 'bossHit' ? `hit for ${stunDamage.damage}` : 'no hit');
+
+const win = runFight(1, (_f, t) => ({ attack: t === 0, aimZ: -1 }), { setup: f => { swordSetup(f); f.boss.hp = 10; } });
+check('defeating Skynet wins the fight', win.f.outcome === 'won' && win.events.some(e => e.type === 'won'));
+const lose = runFight(30, () => ({}), { setup: f => (f.playerHp = 1) });
+check('running out of HP loses the fight', lose.f.outcome === 'lost' && lose.events.some(e => e.type === 'lost'));
+
+const runA = runFight(20, (_f, t) => ({ moveX: Math.sin(t / 40), moveZ: -1, dash: t % 50 === 0, aimZ: -1 }));
+const runB = runFight(20, (_f, t) => ({ moveX: Math.sin(t / 40), moveZ: -1, dash: t % 50 === 0, aimZ: -1 }));
+check('fights are deterministic', runA.f.playerHp === runB.f.playerHp && runA.f.decisions.length === runB.f.decisions.length && runA.f.player.pos.x === runB.f.player.pos.x,
+  `HP ${runA.f.playerHp.toFixed(1)}, ${runA.f.decisions.length} decisions`);
 
 let failed = 0;
 for (const [name, ok, detail] of checks) {

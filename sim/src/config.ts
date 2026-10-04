@@ -29,6 +29,28 @@ export const LAYOUT = {
   slabThickness: 0.6,
 };
 
+/** Laser sword: three-swing combo toward the camera's aim. */
+export const SWORD = {
+  swingTime: 0.3,
+  /** Extra time after a swing in which the next click continues the combo. */
+  comboWindow: 0.35,
+  /** Fraction of the swing at which the hit lands. */
+  hitAt: 0.45,
+  /** Reach from the chest (added to Skynet's hit radius). */
+  reach: 3.2,
+  /** Half-angle of the swing arc around the facing direction (radians). */
+  arcHalf: 1.2,
+  damage: [28, 28, 44],
+  /** Swinging in the air briefly holds you up (min vertical speed). */
+  airHang: 3,
+  /** Ground movement speed multiplier while swinging. */
+  moveScale: 0.45,
+};
+
+export const PLAYER_HP = 100;
+/** Invulnerability after taking a hit, so a volley can't shred you instantly. */
+export const HURT_INVULN = 0.4;
+
 export const PLAYER = {
   radius: 0.4,
   height: 1.8,

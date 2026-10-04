@@ -58,6 +58,23 @@ Use **Three.js** in the browser:
 - Kinematic character controller (velocity + gravity + `heightAt` ground snap). No physics
   engine — that keeps movement fast, tight, and deterministic.
 
+## 2b. Combat (built in M3 — `sim/src/combat.ts`)
+- **Skynet** perches 7 m above the pillar (1200 HP). An **energy bar** (max 100, +9/s) pays
+  for attacks (20–40 each) plus a 0.5 s pause after each, capping it at ~1 attack / 2.5–3 s.
+- **Attacks** (telegraphed: core charges, aim line for ranged, red ground rings for landings):
+  - Bolt Volley — 5 fast bolts, re-aimed per shot · Spread Shot — 7-bolt fan
+  - Seeker Orbs — 3 slow homing orbs · Mortar — 4 lobbed shells that arc over walls (AoE)
+  - Blade Sweep — ring AoE around Skynet (close range)
+  - Dive Slam — dives onto the target, shockwave AoE, then **stunned 2.4 s (1.5× damage)**
+- Bolts/orbs are blocked by walls and roofs (`raycast`); mortars are the anti-camping tool.
+- **Decision = arm** (17): wait 0.6 s / wait 1.6 s, or attack × aim mode
+  (direct / lead / flank — flank offsets toward the player's last dodge side). The brain
+  chooses frequency (by waiting) and aim; energy enforces the hard limit.
+- **Player**: 100 HP, 0.4 s invulnerability after a hit, dash i-frames dodge everything.
+  Laser sword: 3-hit combo (28/28/44) toward the camera aim; air swings hang briefly.
+- **Decision log** (`fight.decisions`): per decision, damage dealt and damage taken — the
+  reward signal for M4.
+
 ## 3. AI algorithm
 ### What the AI controls
 Split the boss into two layers, like most shipped game AI:

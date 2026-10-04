@@ -1,5 +1,5 @@
 import { moverOffset, moverSolid, solidTop, type Arena, type Solid } from './arena';
-import { ARENA_WALK_RADIUS, PLAYER } from './config';
+import { ARENA_WALK_RADIUS, PLAYER, SWORD } from './config';
 import { approachAngle, clamp, vec3, type Vec3 } from './math';
 import { heightAt } from './terrain';
 
@@ -19,9 +19,11 @@ export interface PlayerInput {
   aimPitch: number;
   /** Held: glide while airborne. */
   glide: boolean;
+  /** True only on the tick the attack button was pressed. */
+  attack: boolean;
 }
 
-export const NO_INPUT: PlayerInput = { moveX: 0, moveZ: 0, sprint: false, jump: false, dash: false, aimX: 0, aimZ: 0, aimPitch: 0, glide: false };
+export const NO_INPUT: PlayerInput = { moveX: 0, moveZ: 0, sprint: false, jump: false, dash: false, aimX: 0, aimZ: 0, aimPitch: 0, glide: false, attack: false };
 
 export interface PlayerState {
   pos: Vec3;
@@ -45,6 +47,14 @@ export interface PlayerState {
   gliding: boolean;
   /** Seconds left in a vine mantle (air control paused). */
   mantle: number;
+  /** Sword: time left in the current swing, which swing of the combo (0-2), combo window. */
+  swingTimer: number;
+  comboStep: number;
+  comboWindow: number;
+  /** Whether the current swing has already resolved its hit. */
+  swingHit: boolean;
+  /** Increments on every new swing (lets the renderer detect swings). */
+  swingCount: number;
   /** Index into arena.movers of the shifting wall being stood on, or -1. */
   mover: number;
 }
@@ -68,6 +78,11 @@ export function createPlayer(x: number, z: number): PlayerState {
     wallNZ: 0,
     gliding: false,
     mantle: 0,
+    swingTimer: 0,
+    comboStep: 0,
+    comboWindow: 0,
+    swingHit: true,
+    swingCount: 0,
     mover: -1,
   };
 }
@@ -160,7 +175,21 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
   p.dashCooldown = Math.max(0, p.dashCooldown - dt);
   p.invuln = Math.max(0, p.invuln - dt);
   p.mantle = Math.max(0, p.mantle - dt);
+  p.swingTimer = Math.max(0, p.swingTimer - dt);
+  p.comboWindow = Math.max(0, p.comboWindow - dt);
   if (input.jump) p.jumpBuffer = PLAYER.jumpBuffer;
+
+  // Sword swing toward the camera's aim; chains into a 3-hit combo inside the combo window.
+  if (input.attack && p.swingTimer <= 0 && !p.climbing) {
+    p.comboStep = p.comboWindow > 0 ? (p.comboStep + 1) % 3 : 0;
+    p.swingTimer = SWORD.swingTime;
+    p.comboWindow = SWORD.swingTime + SWORD.comboWindow;
+    p.swingHit = false;
+    p.swingCount++;
+    const al = Math.hypot(input.aimX, input.aimZ);
+    if (al > 0.1) p.yaw = Math.atan2(input.aimX / al, input.aimZ / al);
+    if (!p.onGround) p.vel.y = Math.max(p.vel.y, SWORD.airHang);
+  }
 
   // Ride the shifting wall we're standing on.
   if (p.mover >= 0 && p.onGround) {
@@ -244,7 +273,7 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.vel.y = p.dashDir.y * speed;
     p.vel.z = p.dashDir.z * speed;
   } else if (p.onGround && !p.climbing) {
-    const speed = input.sprint ? PLAYER.sprintSpeed : PLAYER.runSpeed;
+    const speed = (input.sprint ? PLAYER.sprintSpeed : PLAYER.runSpeed) * (p.swingTimer > 0 ? SWORD.moveScale : 1);
     steer(dirX * speed, dirZ * speed, PLAYER.groundAccel);
   } else if (p.gliding) {
     const dive = Math.max(0, -input.aimPitch);
@@ -382,7 +411,9 @@ export function stepPlayer(p: PlayerState, input: PlayerInput, dt: number, arena
     p.mover = -1;
   }
 
-  if (Math.hypot(p.vel.x, p.vel.z) > 0.5 && !p.climbing) {
+  if (p.swingTimer > 0) {
+    // Keep facing the swing direction.
+  } else if (Math.hypot(p.vel.x, p.vel.z) > 0.5 && !p.climbing) {
     p.yaw = approachAngle(p.yaw, Math.atan2(p.vel.x, p.vel.z), PLAYER.turnRate * dt);
   } else if (p.climbing) {
     p.yaw = Math.atan2(-p.wallNX, -p.wallNZ);

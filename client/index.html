@@ -7,24 +7,56 @@
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1a0b08; font-family: system-ui, sans-serif; color: #e8f6ff; }
       canvas { display: block; }
+      .hidden { opacity: 0 !important; pointer-events: none !important; }
       #hud {
         position: fixed; inset: 0; display: grid; place-content: center; text-align: center;
         background: rgba(10, 4, 3, 0.55); pointer-events: none; transition: opacity 0.2s;
       }
-      #hud.hidden { opacity: 0; }
       #hud h1 { margin: 0; font-size: 2.6rem; letter-spacing: 0.2em; color: #ff3b1f; text-shadow: 0 0 18px #ff2200; }
       #hud p { margin: 0.4rem 0; opacity: 0.85; }
       #hud .start { margin-top: 1.2rem; font-weight: 600; color: #00e5ff; }
+
+      .bar { height: 10px; background: rgba(255,255,255,0.12); border-radius: 5px; overflow: hidden; }
+      .bar > div { height: 100%; width: 100%; transition: width 0.12s; }
+      #boss-hud { position: fixed; top: 18px; left: 50%; width: min(560px, 70vw); transform: translateX(-50%); pointer-events: none; }
+      #boss-hud .name { text-align: center; letter-spacing: 0.35em; font-weight: 700; color: #ff5a3c; text-shadow: 0 0 10px #ff2200; margin-bottom: 6px; }
+      #boss-hp { background: linear-gradient(90deg, #ff2a10, #ff7a3c); }
+      #boss-energy-bar { height: 4px; margin-top: 4px; }
+      #boss-energy { background: #ffb020; }
+      #boss-state { text-align: center; font-size: 0.8rem; height: 1.1em; margin-top: 4px; color: #9dffe0; letter-spacing: 0.15em; }
+      #player-hud { position: fixed; left: 24px; bottom: 24px; width: 260px; pointer-events: none; }
+      #player-hud .label { font-size: 0.75rem; letter-spacing: 0.25em; color: #00e5ff; margin-bottom: 4px; }
+      #player-hp { background: linear-gradient(90deg, #00b8d4, #00e5ff); }
       #dash { position: fixed; left: 50%; bottom: 28px; width: 160px; height: 6px; transform: translateX(-50%); background: rgba(255,255,255,0.15); border-radius: 3px; overflow: hidden; }
       #dash-fill { height: 100%; width: 100%; background: #00e5ff; }
+      #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(0,229,255,0.85); box-shadow: 0 0 6px #00e5ff; pointer-events: none; }
+      #vignette { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(255,20,0,0.65) 100%); }
+      #result { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(10,4,3,0.6); transition: opacity 0.4s; pointer-events: none; }
+      #result h1 { margin: 0; font-size: 3rem; letter-spacing: 0.2em; }
+      #result.won h1 { color: #00e5ff; text-shadow: 0 0 20px #00e5ff; }
+      #result.lost h1 { color: #ff3b1f; text-shadow: 0 0 20px #ff2200; }
     </style>
   </head>
   <body>
+    <div id="boss-hud">
+      <div class="name">SKYNET</div>
+      <div class="bar"><div id="boss-hp"></div></div>
+      <div class="bar" id="boss-energy-bar"><div id="boss-energy"></div></div>
+      <div id="boss-state"></div>
+    </div>
+    <div id="player-hud">
+      <div class="label">ARMOR</div>
+      <div class="bar"><div id="player-hp"></div></div>
+    </div>
+    <div id="crosshair"></div>
+    <div id="vignette"></div>
+    <div id="result" class="hidden"><h1 id="result-title"></h1><p>Press R to fight again</p></div>
     <div id="hud">
       <h1>SKYNET ATTACK ONLINE</h1>
       <p>WASD move · Mouse look · Shift sprint · Space jump (x2) · Q / Right-click dash · Hold Caps Lock in air to glide</p>
-      <p>Dashes follow your aim — look up to dash up, down to dash down. Look down while gliding to dive.</p>
-      <p>Push into glowing vines to climb · Amber walls shift · Esc to exit</p>
+      <p>Left-click: laser sword (3-hit combo) · Dash through attacks to dodge them</p>
+      <p>Skynet's energy bar limits its attacks — strike when it's drained or stunned after a Dive Slam.</p>
+      <p>Push into glowing vines to climb · Amber walls shift · Walls block bolts, not mortars · R restart · Esc release mouse</p>
       <p class="start">Click to engage</p>
     </div>
     <div id="dash"><div id="dash-fill"></div></div>
