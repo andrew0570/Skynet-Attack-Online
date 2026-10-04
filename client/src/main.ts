@@ -66,7 +66,7 @@ const arena = generateArena();
 const arenaMeshes = createArenaMeshes(arena);
 scene.add(arenaMeshes.group);
 const skynet = createSkynet();
-scene.add(skynet.group);
+scene.add(skynet.group, skynet.deathFx);
 const fx = createCombatFx(scene);
 
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 700);
@@ -458,7 +458,11 @@ renderer.setAnimationLoop(() => {
   hero.group.position.set(renderPos.x, renderPos.y, renderPos.z);
   hero.group.rotation.y = player.yaw;
   hero.update(params.has('glide') ? { ...player, gliding: true } : player, frameDt, elapsed);
-  skynet.animate(elapsed, frameDt, bossPos, fight.boss);
+  // The surface under Skynet (pillar top, wall, or terrain): where it crashes when destroyed.
+  const bossDrop = raycast(arena, bossPos, { x: bossPos.x, y: bossPos.y - 120, z: bossPos.z }, renderTime);
+  const bossFloor = Math.max(heightAt(bossPos.x, bossPos.z), bossPos.y - bossDrop * 120);
+  skynet.animate(elapsed, frameDt, bossPos, fight.boss, bossFloor);
+  fx.shake = Math.max(fx.shake, skynet.shake);
   fx.update(fight, frameDt, elapsed);
 
   // Shadow sits on whatever is directly below: terrain, a wall top, or a slab.
@@ -514,8 +518,9 @@ renderer.setAnimationLoop(() => {
   ui.reticle.classList.toggle('on-target', aimRay(fight, arena, camera.position, lookDir).hitBoss);
   hurtFlash = Math.max(0, hurtFlash - frameDt * 2.5);
   ui.vignette.style.opacity = String(hurtFlash);
-  ui.result.classList.toggle('hidden', fight.outcome === 'active');
-  ui.result.className = fight.outcome === 'active' ? 'hidden' : fight.outcome;
+  // On a win, hold the result screen until Skynet's death sequence has played out.
+  const showResult = fight.outcome === 'lost' || (fight.outcome === 'won' && skynet.deathDone());
+  ui.result.className = showResult ? fight.outcome : 'hidden';
   ui.resultTitle.textContent = fight.outcome === 'won' ? 'SKYNET DEFEATED' : fight.outcome === 'lost' ? 'TERMINATED' : '';
   const who = playerName ? (fight.outcome === 'won' ? `Well fought, ${playerName}. ` : `${playerName} has fallen. `) : '';
   ui.resultNote.textContent = who + (submitted ? 'Skynet is learning from this fight.' : '');
