@@ -4,11 +4,14 @@ import { clamp, heightAt, type Vec3 } from '@sao/sim';
 const SENSITIVITY = 0.0025;
 const DISTANCE = 9;
 const TARGET_HEIGHT = 1.6;
+/** Camera pitch at which dashes go level. Looking higher dashes up; lower dashes down. */
+const NEUTRAL_PITCH = 0.35;
+const DASH_PITCH_GAIN = 1.4;
 
 /** Third-person orbit camera. yaw = 0 places the camera on +Z looking toward -Z. */
 export class ThirdPersonCamera {
   yaw = 0;
-  pitch = 0.35;
+  pitch = NEUTRAL_PITCH;
   private target = new THREE.Vector3();
 
   constructor(public camera: THREE.PerspectiveCamera) {}
@@ -23,6 +26,11 @@ export class ThirdPersonCamera {
     const s = Math.sin(this.yaw);
     const c = Math.cos(this.yaw);
     return { x: -s * forward + c * right, z: -c * forward - s * right };
+  }
+
+  /** Dash aim: horizontal camera forward plus elevation derived from camera pitch. */
+  aim(): { x: number; z: number; pitch: number } {
+    return { x: -Math.sin(this.yaw), z: -Math.cos(this.yaw), pitch: (NEUTRAL_PITCH - this.pitch) * DASH_PITCH_GAIN };
   }
 
   update(player: Vec3, dt: number): void {

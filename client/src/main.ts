@@ -35,12 +35,16 @@ function readInput(): PlayerInput {
   const forward = (input.isHeld('KeyW') ? 1 : 0) - (input.isHeld('KeyS') ? 1 : 0);
   const right = (input.isHeld('KeyD') ? 1 : 0) - (input.isHeld('KeyA') ? 1 : 0);
   const dir = thirdPerson.moveDir(forward, right);
+  const aim = thirdPerson.aim();
   return {
     moveX: dir.x,
     moveZ: dir.z,
     sprint: input.isHeld('ShiftLeft') || input.isHeld('ShiftRight'),
     jump: input.wasPressed('Space'),
     dash: input.wasPressed('KeyQ') || input.wasPressed('Mouse2'),
+    aimX: aim.x,
+    aimZ: aim.z,
+    aimPitch: aim.pitch,
   };
 }
 

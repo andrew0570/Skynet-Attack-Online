@@ -10,16 +10,25 @@ export const PLAYER = {
   runSpeed: 10,
   sprintSpeed: 16,
   groundAccel: 90,
-  airAccel: 30,
   gravity: 34,
-  jumpSpeed: 13,
+  // Jumps are committed: no air control, so direction only changes on a jump, dash, or landing.
+  jumpSpeed: 16,
+  /** Horizontal speed multiplier applied on a ground jump (carries you farther). */
+  jumpBoost: 1.2,
+  airJumpSpeedScale: 0.9,
+  maxAirSpeed: 24,
   airJumps: 1,
   coyoteTime: 0.1,
   jumpBuffer: 0.12,
-  dashSpeed: 38,
-  dashTime: 0.16,
+  // Dash goes where the camera aims (pitch included); ~11.5 m per dash.
+  dashSpeed: 48,
+  dashTime: 0.24,
   dashCooldown: 0.55,
-  dashInvuln: 0.25,
+  dashInvuln: 0.3,
+  /** Dashes allowed per airtime (reset on landing); keeps players from flying over Skynet. */
+  airDashes: 1,
+  /** Max dash elevation (radians) up or down. */
+  dashMaxPitch: 1.2,
   turnRate: 14,
   height: 1.8,
 };
