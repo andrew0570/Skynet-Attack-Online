@@ -5,11 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Skynet Assault Online</title>
     <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #05070a; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1a0b08; font-family: system-ui, sans-serif; color: #e8f6ff; }
       canvas { display: block; }
+      #hud {
+        position: fixed; inset: 0; display: grid; place-content: center; text-align: center;
+        background: rgba(10, 4, 3, 0.55); pointer-events: none; transition: opacity 0.2s;
+      }
+      #hud.hidden { opacity: 0; }
+      #hud h1 { margin: 0; font-size: 2.6rem; letter-spacing: 0.2em; color: #ff3b1f; text-shadow: 0 0 18px #ff2200; }
+      #hud p { margin: 0.4rem 0; opacity: 0.85; }
+      #hud .start { margin-top: 1.2rem; font-weight: 600; color: #00e5ff; }
+      #dash { position: fixed; left: 50%; bottom: 28px; width: 160px; height: 6px; transform: translateX(-50%); background: rgba(255,255,255,0.15); border-radius: 3px; overflow: hidden; }
+      #dash-fill { height: 100%; width: 100%; background: #00e5ff; }
     </style>
   </head>
   <body>
+    <div id="hud">
+      <h1>SKYNET ASSAULT ONLINE</h1>
+      <p>WASD move · Mouse look · Shift sprint · Space jump (x2) · Q / Right-click dash</p>
+      <p class="start">Click to engage</p>
+    </div>
+    <div id="dash"><div id="dash-fill"></div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

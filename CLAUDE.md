@@ -107,8 +107,10 @@ Schedule and done-criteria: [docs/milestones.md](docs/milestones.md).
 - npm cache → `.tools/npm-cache/`.
 - VS Code terminals get the PATH automatically (`.vscode/settings.json`). In other shells (and
   in every Claude PowerShell call) run `. .\env.ps1` first.
-- The local DB lives inside OneDrive. If OneDrive file locking causes DB errors, move the data
-  dir out (`spacetime start --data-dir <path>`).
+- The path is under `OneDrive\Desktop`, but the user has **signed out of OneDrive** on this
+  machine (Oct 3), so nothing syncs or locks files. If OneDrive is ever signed back in, move
+  the project out (e.g. `C:\dev\skynet-assault-online`, then `npm install` to rebuild the
+  absolute-path workspace junctions in `node_modules/@sao`).
 
 ## Commands
 Run from the repo root after `. .\env.ps1`:
@@ -120,7 +122,8 @@ Run from the repo root after `. .\env.ps1`:
 | `npm run db:generate` | Regenerate client bindings |
 | `npm run db:logs` | Module logs |
 | `npm run dev` | Client dev server → http://localhost:5173 |
-| `npm run build` | Type-check + production build of the client |
+| `npm run build` | Type-check (client + sim) + production build of the client |
+| `npm run sim:smoke` | Headless movement checks for `sim/` (run after touching `sim/`) |
 | `npx tsc --noEmit -p server` | Type-check the server module (`spacetime build` skips it) |
 | `spacetime sql --server local skynet-assault-online "SELECT * FROM player"` | Inspect data |
 

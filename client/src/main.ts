@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { ARENA_RADIUS } from '@sao/sim';
+import { createPlayer, lerp, PLAYER, SIM_DT, stepPlayer, type PlayerInput } from '@sao/sim';
+import { ThirdPersonCamera } from './camera';
+import { Input } from './input';
+import { createPlayerMesh, createSkynet, createWorld } from './world';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -7,39 +10,20 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x05070a);
-scene.fog = new THREE.Fog(0x05070a, 40, 140);
+createWorld(scene);
+const skynet = createSkynet();
+scene.add(skynet.group);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
-camera.position.set(0, 12, 30);
-camera.lookAt(0, 4, 0);
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 400);
+const thirdPerson = new ThirdPersonCamera(camera);
 
-scene.add(new THREE.HemisphereLight(0x8899aa, 0x110805, 0.6));
-const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
-sun.position.set(20, 40, 10);
-scene.add(sun);
+const player = createPlayer(0, 30);
+const playerMesh = createPlayerMesh();
+scene.add(playerMesh.group);
 
-const ground = new THREE.Mesh(
-  new THREE.CircleGeometry(ARENA_RADIUS, 64),
-  new THREE.MeshStandardMaterial({ color: 0x3a2a20, roughness: 1 })
-);
-ground.rotation.x = -Math.PI / 2;
-scene.add(ground);
-
-// Placeholder Skynet core: glowing icosahedron with an orbiting blade ring.
-const skynet = new THREE.Group();
-skynet.position.y = 5;
-const core = new THREE.Mesh(
-  new THREE.IcosahedronGeometry(1.6, 0),
-  new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2200, emissiveIntensity: 2, flatShading: true })
-);
-const ring = new THREE.Mesh(
-  new THREE.TorusGeometry(3.2, 0.12, 8, 48),
-  new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.9, roughness: 0.3 })
-);
-skynet.add(core, ring);
-skynet.add(new THREE.PointLight(0xff3311, 30, 25));
-scene.add(skynet);
+const input = new Input(renderer.domElement);
+const hud = document.getElementById('hud')!;
+const dashBar = document.getElementById('dash-fill')!;
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -47,11 +31,58 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const clock = new THREE.Clock();
+function readInput(): PlayerInput {
+  const forward = (input.isHeld('KeyW') ? 1 : 0) - (input.isHeld('KeyS') ? 1 : 0);
+  const right = (input.isHeld('KeyD') ? 1 : 0) - (input.isHeld('KeyA') ? 1 : 0);
+  const dir = thirdPerson.moveDir(forward, right);
+  return {
+    moveX: dir.x,
+    moveZ: dir.z,
+    sprint: input.isHeld('ShiftLeft') || input.isHeld('ShiftRight'),
+    jump: input.wasPressed('Space'),
+    dash: input.wasPressed('KeyQ') || input.wasPressed('Mouse2'),
+  };
+}
+
+const prevPos = { ...player.pos };
+let accumulator = 0;
+let last = performance.now();
+let elapsed = 0;
+
 renderer.setAnimationLoop(() => {
-  const t = clock.getElapsedTime();
-  core.rotation.set(t * 0.7, t * 1.1, 0);
-  ring.rotation.set(Math.PI / 2 + Math.sin(t) * 0.3, 0, t * 2);
-  skynet.position.y = 5 + Math.sin(t * 1.5) * 0.4;
+  const now = performance.now();
+  const frameDt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  elapsed += frameDt;
+
+  const { dx, dy } = input.takeMouseDelta();
+  thirdPerson.rotate(dx, dy);
+
+  accumulator += frameDt;
+  while (accumulator >= SIM_DT) {
+    Object.assign(prevPos, player.pos);
+    stepPlayer(player, readInput(), SIM_DT);
+    input.clearPressed();
+    accumulator -= SIM_DT;
+  }
+
+  // Interpolate between the last two sim states for smooth rendering at any refresh rate.
+  const alpha = accumulator / SIM_DT;
+  const renderPos = {
+    x: lerp(prevPos.x, player.pos.x, alpha),
+    y: lerp(prevPos.y, player.pos.y, alpha),
+    z: lerp(prevPos.z, player.pos.z, alpha),
+  };
+  playerMesh.group.position.set(renderPos.x, renderPos.y, renderPos.z);
+  playerMesh.group.rotation.y = player.yaw;
+  playerMesh.body.emissiveIntensity = player.invuln > 0 ? 1.4 : 0.15;
+  playerMesh.group.scale.set(1, player.dashTimer > 0 ? 0.85 : 1, player.dashTimer > 0 ? 1.3 : 1);
+
+  skynet.animate(elapsed);
+  thirdPerson.update(renderPos, frameDt);
+
+  hud.classList.toggle('hidden', input.locked);
+  dashBar.style.width = `${(1 - player.dashCooldown / PLAYER.dashCooldown) * 100}%`;
+
   renderer.render(scene, camera);
 });

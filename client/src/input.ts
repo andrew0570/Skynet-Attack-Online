@@ -1,0 +1,57 @@
+/** Keyboard + pointer-locked mouse. Press events persist until a sim tick consumes them. */
+export class Input {
+  private held = new Set<string>();
+  private pressed = new Set<string>();
+  mouseDX = 0;
+  mouseDY = 0;
+  locked = false;
+
+  constructor(private target: HTMLElement) {
+    window.addEventListener('keydown', e => {
+      if (!e.repeat) this.pressed.add(e.code);
+      this.held.add(e.code);
+      if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
+    });
+    window.addEventListener('keyup', e => this.held.delete(e.code));
+    window.addEventListener('blur', () => this.held.clear());
+    target.addEventListener('mousedown', e => {
+      if (!this.locked) {
+        target.requestPointerLock();
+        return;
+      }
+      this.pressed.add(`Mouse${e.button}`);
+      this.held.add(`Mouse${e.button}`);
+    });
+    window.addEventListener('mouseup', e => this.held.delete(`Mouse${e.button}`));
+    target.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('pointerlockchange', () => {
+      this.locked = document.pointerLockElement === this.target;
+      if (!this.locked) this.held.clear();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!this.locked) return;
+      this.mouseDX += e.movementX;
+      this.mouseDY += e.movementY;
+    });
+  }
+
+  isHeld(code: string): boolean {
+    return this.held.has(code);
+  }
+
+  wasPressed(code: string): boolean {
+    return this.pressed.has(code);
+  }
+
+  /** Call after a sim tick has read this frame's presses. */
+  clearPressed(): void {
+    this.pressed.clear();
+  }
+
+  takeMouseDelta(): { dx: number; dy: number } {
+    const d = { dx: this.mouseDX, dy: this.mouseDY };
+    this.mouseDX = 0;
+    this.mouseDY = 0;
+    return d;
+  }
+}

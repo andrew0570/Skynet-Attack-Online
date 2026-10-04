@@ -9,7 +9,9 @@ Each milestone ends in a working, committed state. If a milestone runs over by m
 - **Done:** placeholder Skynet core renders at http://localhost:5173, module publishes to the
   local DB, client bindings generated, first commit.
 
-## M2 — Arena + movement · 8:45 → 10:45 PM
+## M2 — Arena + movement · 8:45 → 10:45 PM ✅ (first pass 8:35 PM — needs playtest tuning)
+Controls: WASD, mouse look (click to lock), Shift sprint, Space jump + double jump,
+Q / right-click dash. Tunables in `sim/src/config.ts` (`PLAYER`).
 - Seeded heightmap crater terrain (`sim/terrain.ts` → `heightAt(x, z)`), rim as boundary.
 - Third-person camera (mouse look, pointer lock).
 - Kinematic controller in `sim/` (tick-based): WASD, sprint, jump, dash with brief
