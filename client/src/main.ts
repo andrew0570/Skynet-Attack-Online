@@ -42,7 +42,7 @@ import { createArenaMeshes } from './arenaMesh';
 import { connectBrain } from './net';
 import { ThirdPersonCamera } from './camera';
 import { createCombatFx } from './combatFx';
-import { createHero } from './hero';
+import { createHero, setHeroColor } from './hero';
 import { Input } from './input';
 import { createSkynet, createWorld } from './world';
 
@@ -114,7 +114,7 @@ const ui = {
   reticle: el('reticle'),
   brainStatus: el('brain-status'),
   resultNote: el('result-note'),
-  consent: el('consent'),
+  playerName: el('player-name'),
   skillSlot: [0, 1, 2].map(i => el(`skill-${i}`)),
   skillCd: [0, 1, 2].map(i => el(`skill-cd-${i}`)),
   skillTime: [0, 1, 2].map(i => el(`skill-time-${i}`)),
@@ -252,28 +252,49 @@ function renderLearned(): void {
   ui.learnedRows.innerHTML = rows.join('');
 }
 
-// Consent: asked once per browser; the answer is remembered so a reset server gets re-told.
-const CONSENT_KEY = 'sao.consent';
-let consentAnswer: string | null = null;
-try {
-  consentAnswer = localStorage.getItem(CONSENT_KEY);
-} catch {
-  /* storage unavailable: ask every visit */
+// ---- Start screen (every load): callsign, armor color, training consent ----
+// The callsign and color live only in this page's memory: never sent to the server or saved.
+// The consent choice is sent (the server only learns from fights of players who agreed).
+const ARMOR_COLORS = [
+  ['Cyan', '#00e5ff'], ['Lime', '#5dff6a'], ['Gold', '#ffd23d'], ['Orange', '#ff9a2e'],
+  ['Magenta', '#ff4fd8'], ['Violet', '#b26bff'], ['Teal', '#2effc0'], ['White', '#e8f6ff'],
+] as const;
+const startScreen = el('start');
+const startForm = el('start-form') as HTMLFormElement;
+const startName = el('start-name') as HTMLInputElement;
+const startGo = el('start-go') as HTMLButtonElement;
+let playerName = '';
+/** null until the start screen is answered (also null in test modes: never submits). */
+let consentChoice: boolean | null = null;
+let lastConsentSync = -Infinity;
+el('start-colors').innerHTML = ARMOR_COLORS.map(([name, hex], i) =>
+  `<label class="swatch" title="${name}"><input type="radio" name="color" value="${hex}" aria-label="${name}"${i === 0 ? ' checked' : ''} /><i style="--c:${hex}"></i></label>`).join('');
+function applyColor(hex: string): void {
+  setHeroColor(hex);
+  startScreen.style.setProperty('--accent', hex);
+  ui.playerName.style.setProperty('--accent', hex);
 }
-let consentAnswered = consentAnswer === 'yes' || consentAnswer === 'no';
-let consentResent = false;
-function answerConsent(yes: boolean): void {
-  net.setConsent(yes);
-  consentAnswered = true;
-  consentAnswer = yes ? 'yes' : 'no';
-  try {
-    localStorage.setItem(CONSENT_KEY, consentAnswer);
-  } catch {
-    /* fine */
+startForm.addEventListener('change', e => {
+  const t = e.target as HTMLInputElement;
+  if (t.name === 'color') applyColor(t.value);
+  if (t.name === 'consent') {
+    startGo.disabled = false;
+    startGo.textContent = 'Enter the arena';
   }
-}
-el('consent-yes').addEventListener('click', () => answerConsent(true));
-el('consent-no').addEventListener('click', () => answerConsent(false));
+});
+startForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const choice = startForm.querySelector<HTMLInputElement>('input[name="consent"]:checked');
+  if (!choice) return;
+  consentChoice = choice.value === 'yes';
+  playerName = startName.value.trim().slice(0, 16) || 'Resistance fighter';
+  ui.playerName.textContent = playerName.toUpperCase();
+  startScreen.classList.add('hidden');
+  startGo.blur();
+});
+// Tests and screenshots skip the start screen.
+if (params.has('autoplay') || params.has('shot')) startScreen.classList.add('hidden');
+else startName.focus();
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -463,7 +484,8 @@ renderer.setAnimationLoop(() => {
 
   // HUD
   const b = fight.boss;
-  ui.hud.classList.toggle('hidden', input.locked || params.has('shot'));
+  const startOpen = !startScreen.classList.contains('hidden');
+  ui.hud.classList.toggle('hidden', input.locked || params.has('shot') || startOpen);
   ui.bossHp.style.width = `${(b.hp / BOSS.maxHp) * 100}%`;
   ui.bossEnergy.style.width = `${(b.energy / BOSS.maxEnergy) * 100}%`;
   ui.bossHud.classList.toggle('enraged', b.enraged);
@@ -495,11 +517,12 @@ renderer.setAnimationLoop(() => {
   ui.result.classList.toggle('hidden', fight.outcome === 'active');
   ui.result.className = fight.outcome === 'active' ? 'hidden' : fight.outcome;
   ui.resultTitle.textContent = fight.outcome === 'won' ? 'SKYNET DEFEATED' : fight.outcome === 'lost' ? 'TERMINATED' : '';
-  ui.resultNote.textContent = submitted ? 'Skynet is learning from this fight.' : '';
+  const who = playerName ? (fight.outcome === 'won' ? `Well fought, ${playerName}. ` : `${playerName} has fallen. `) : '';
+  ui.resultNote.textContent = who + (submitted ? 'Skynet is learning from this fight.' : '');
   calloutTimer = Math.max(0, calloutTimer - frameDt);
   ui.callout.classList.toggle('hidden', calloutTimer <= 0 || params.has('shot'));
   updateRead(frameDt);
-  ui.read.classList.toggle('hidden', params.has('shot'));
+  ui.read.classList.toggle('hidden', params.has('shot') || startOpen);
   // Hold Tab (or ?learned for screenshots): what the shared brain has learned.
   const showLearned = input.isHeld('Tab') || params.has('learned');
   if (showLearned) renderLearned();
@@ -515,13 +538,12 @@ renderer.setAnimationLoop(() => {
     ui.brainStatus.textContent = `NEURAL CORE v${using} · trained on ${s.fights} fights${newer}${notLearning}`;
   }
 
-  if (s.connected && s.consented === false && consentAnswer === 'yes' && !consentResent) {
-    consentResent = true;
-    net.setConsent(true);
+  // Keep the server's consent record in line with the start-screen choice (also after a
+  // reconnect or a server reset). Retried at most every 2 s until the server reflects it.
+  if (s.connected && consentChoice !== null && s.consented !== consentChoice && elapsed - lastConsentSync > 2) {
+    lastConsentSync = elapsed;
+    net.setConsent(consentChoice);
   }
-  // One-time consent prompt (shown before you engage).
-  const showConsent = s.connected && s.consented === false && !consentAnswered && !params.has('shot') && !params.has('autoplay');
-  ui.consent.classList.toggle('hidden', !showConsent);
 
   composer.render();
 });

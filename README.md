@@ -154,7 +154,9 @@ _TODO_
 
 Skynet only learns from players who opt in. If you agree, your in-game actions (movement,
 attacks, dodges, timing) are recorded anonymously. No personal information is collected.
-You can always fight without contributing.
+You can always fight without contributing. You choose on the start screen every time you load
+the game, where you also pick a callsign and armor color; those stay in your browser tab and
+are never sent or saved.
 
 ## Running locally
 

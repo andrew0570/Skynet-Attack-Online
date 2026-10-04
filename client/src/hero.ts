@@ -8,20 +8,30 @@ const ARMOR = new THREE.MeshStandardMaterial({ color: 0x3b4452, metalness: 0.75,
 const ARMOR_LIGHT = new THREE.MeshStandardMaterial({ color: 0x8a96a8, metalness: 0.7, roughness: 0.5, flatShading: true });
 const SUIT = new THREE.MeshStandardMaterial({ color: 0x12161c, metalness: 0.2, roughness: 0.8 });
 
+/** The player's armor color (cyan by default; picked on the start screen via setHeroColor). */
 const CYAN = new THREE.Color(0x00e5ff);
+/** Every material tinted by the armor color, with its HDR brightness multiplier. */
+const ACCENTED: { mat: THREE.MeshBasicMaterial; k: number }[] = [];
+function accented<T extends THREE.MeshBasicMaterial>(mat: T, k: number): T {
+  ACCENTED.push({ mat, k });
+  return mat;
+}
 /** HDR glow: colors above 1.0 are what the bloom pass picks up. */
-const glow = (intensity: number) => new THREE.MeshBasicMaterial({ color: CYAN.clone().multiplyScalar(intensity) });
+const glow = (intensity: number) => accented(new THREE.MeshBasicMaterial({ color: CYAN.clone().multiplyScalar(intensity) }), intensity);
 const SEAM = glow(1.6);
 const VISOR = glow(2.6);
 const CORE = glow(3);
 const BLADE_CORE = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.75, 1, 1).multiplyScalar(2.2) });
-const BLADE_SHEATH = new THREE.MeshBasicMaterial({
-  color: CYAN.clone().multiplyScalar(1.2),
-  transparent: true,
-  opacity: 0.3,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
+const BLADE_SHEATH = accented(
+  new THREE.MeshBasicMaterial({
+    color: CYAN.clone().multiplyScalar(1.2),
+    transparent: true,
+    opacity: 0.3,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  }),
+  1.2
+);
 const FLAME = new THREE.MeshBasicMaterial({
   color: new THREE.Color(0.4, 0.9, 1).multiplyScalar(4),
   transparent: true,
@@ -91,7 +101,7 @@ function createFlurry(): { group: THREE.Group; trails: { pivot: THREE.Group; mat
   const group = new THREE.Group();
   const geo = new THREE.RingGeometry(0.7, 2.0, 20, 1, -Math.PI / 2 - 1.2, 2.4).rotateX(-Math.PI / 2);
   const trails = Array.from({ length: 6 }, () => {
-    const mat = new THREE.MeshBasicMaterial({ color: CYAN.clone().multiplyScalar(2.8), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const mat = accented(new THREE.MeshBasicMaterial({ color: CYAN.clone().multiplyScalar(2.8), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 2.8);
     // Pivot rolls around the forward (+Z) axis to tilt each slash plane.
     const pivot = new THREE.Group();
     pivot.add(new THREE.Mesh(geo, mat));
@@ -107,7 +117,7 @@ function createTrails(): THREE.Mesh[] {
   const mk = (geo: THREE.BufferGeometry) => {
     const m = new THREE.Mesh(
       geo,
-      new THREE.MeshBasicMaterial({ color: CYAN.clone().multiplyScalar(2.5), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
+      accented(new THREE.MeshBasicMaterial({ color: CYAN.clone().multiplyScalar(2.5), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 2.5)
     );
     m.position.y = 1.25;
     m.visible = false;
@@ -221,6 +231,17 @@ interface Pose {
   shoulderZ: [number, number];
   elbow: [number, number];
   thrust: number;
+}
+
+/** Recolor the hero's glowing armor seams, visor, wings, and laser sword (cosmetic only). */
+export function setHeroColor(hex: string): void {
+  CYAN.set(hex);
+  for (const { mat, k } of ACCENTED) mat.color.copy(CYAN).multiplyScalar(k);
+  // The blade's core stays near white-hot and the jet flame pale, both tinted toward the color.
+  const white = new THREE.Color(1, 1, 1);
+  BLADE_CORE.color.copy(white).lerp(CYAN, 0.3).multiplyScalar(2.2);
+  FLAME.color.copy(CYAN).lerp(white, 0.35).multiplyScalar(4);
+  for (const g of GLOWS) g[1].copy(g[0].color);
 }
 
 const FLIP_TIME = 0.42;

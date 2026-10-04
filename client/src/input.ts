@@ -8,6 +8,9 @@ export class Input {
 
   constructor(private target: HTMLElement) {
     window.addEventListener('keydown', e => {
+      // Typing in a form (the start screen) isn't game input — and Tab must still move focus.
+      const t = e.target as HTMLElement | null;
+      if (t && ['INPUT', 'BUTTON', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
       // Swallow browser shortcuts while playing (Esc still releases pointer lock natively).
       if (this.locked || e.code === 'Tab') e.preventDefault(); // Tab shows the learned panel
       if (!e.repeat) this.pressed.add(e.code);

@@ -53,7 +53,8 @@ Skynet everyone faces keeps getting smarter.
 Design details and reasoning: [docs/design.md](docs/design.md).
 
 ### Core demo flow (MVP)
-1. Open the site → consent notice → spawn into a small 3D arena.
+1. Open the site → start screen (callsign + armor color, kept in memory only; training
+   consent, sent to the server) → spawn into the arena.
 2. Fight Skynet with fast movement (sprint, dash, jump) and a basic attack.
 3. Skynet chooses moves via the shared learned policy; fight ends in win/loss.
 4. Show a live "Skynet brain" panel: fights learned from, how its move preferences have

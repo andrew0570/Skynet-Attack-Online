@@ -26,13 +26,31 @@
       #boss-hud.enraged .name { color: #ffb020; text-shadow: 0 0 14px #ff6a00; }
       #brain-status { text-align: center; font-size: 0.68rem; letter-spacing: 0.18em; color: #ff9a7a; opacity: 0.85; margin: -2px 0 6px; }
       #result-note { color: #9dffe0; }
-      #consent { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(5,2,2,0.75); z-index: 10; transition: opacity 0.2s; }
-      #consent .card { max-width: 520px; margin: 16px; padding: 24px 28px; background: #120a08; border: 1px solid #ff3b1f; border-radius: 10px; box-shadow: 0 0 30px rgba(255,40,10,0.35); }
-      #consent h2 { margin: 0 0 10px; color: #ff5a3c; letter-spacing: 0.12em; }
-      #consent p { line-height: 1.5; opacity: 0.9; }
-      #consent .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
-      #consent button { flex: 1; padding: 10px 14px; border-radius: 6px; border: 1px solid #00e5ff; background: #00e5ff; color: #001318; font-weight: 700; cursor: pointer; }
-      #consent button.secondary { background: transparent; color: #9feaff; }
+      /* Start screen: shown on every load — callsign, armor color, training consent. */
+      #start { position: fixed; inset: 0; z-index: 10; display: grid; align-items: center; padding: 24px clamp(16px, 6vw, 72px); overflow-y: auto;
+        background: linear-gradient(90deg, rgba(8,3,2,0.94) 0%, rgba(8,3,2,0.86) 42%, rgba(8,3,2,0.35) 100%); transition: opacity 0.25s; --accent: #00e5ff; }
+      #start .card { width: min(480px, 100%); display: grid; gap: 18px; }
+      #start .kicker { font-size: 0.68rem; letter-spacing: 0.28em; color: #ff8f73; font-weight: 700; }
+      #start h1 { margin: -8px 0 0; font-size: clamp(1.7rem, 4vw, 2.4rem); letter-spacing: 0.16em; line-height: 1.15; color: #ff3b1f; text-shadow: 0 0 18px #ff2200; }
+      #start .lede { margin: -6px 0 0; color: #ffcbbd; line-height: 1.5; }
+      #start .field { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
+      #start .field > span, #start legend { padding: 0; font-size: 0.7rem; letter-spacing: 0.24em; font-weight: 700; color: #ff8f73; }
+      #start input[type="text"] { font: inherit; font-size: 1.05rem; letter-spacing: 0.06em; color: #fff; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,143,115,0.4); border-radius: 6px; padding: 10px 12px; }
+      #start input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+      #start .swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+      #start .swatch input { position: absolute; opacity: 0; pointer-events: none; }
+      #start .swatch i { display: block; width: 34px; height: 34px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); border: 3px solid #120a08; outline: 2px solid transparent; cursor: pointer; transition: transform 0.1s; }
+      #start .swatch input:checked + i { outline-color: #fff; transform: scale(1.1); }
+      #start .swatch input:focus-visible + i { outline-color: var(--c); outline-offset: 3px; }
+      #start .choice { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 12px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); cursor: pointer; line-height: 1.45; font-size: 0.88rem; color: #e8d6d0; }
+      #start .choice b { display: block; color: #fff; font-size: 0.95rem; margin-bottom: 2px; }
+      #start .choice input { margin-top: 3px; accent-color: var(--accent); }
+      #start .choice:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+      #start .fine { margin: -4px 0 0; font-size: 0.8rem; color: #b39a92; }
+      #start button { font: inherit; font-weight: 800; letter-spacing: 0.18em; padding: 13px 16px; border-radius: 6px; border: 0; background: var(--accent); color: #041014; cursor: pointer; }
+      #start button:disabled { background: rgba(255,255,255,0.12); color: #8a7a75; cursor: not-allowed; }
+      #start button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+      #player-name { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.22em; color: var(--accent, #00e5ff); text-shadow: 0 0 8px var(--accent, #00e5ff); min-height: 1em; }
       #boss-energy-bar { height: 4px; margin-top: 4px; }
       #boss-energy { background: #ffb020; }
       #boss-state { text-align: center; font-size: 0.8rem; height: 1.1em; margin-top: 4px; color: #9dffe0; letter-spacing: 0.15em; }
@@ -121,6 +139,7 @@
       <div id="boss-state"></div>
     </div>
     <div id="player-hud">
+      <div id="player-name"></div>
       <div class="armor"><div class="label"><span>ARMOR</span><span id="armor-text"></span></div><div class="bar"><div id="player-armor"></div></div></div>
       <div class="health"><div class="label"><span>HEALTH</span><span id="health-text"></span></div><div class="bar"><div id="player-health"></div></div></div>
       <div class="stamina" id="stamina-row"><div class="label"><span>STAMINA</span><span id="stamina-text"></span></div><div class="bar"><div id="player-stamina"></div></div></div>
@@ -154,17 +173,22 @@
     </div>
     <div id="vignette"></div>
     <div id="result" class="hidden"><h1 id="result-title"></h1><p id="result-note"></p><p>Press R to fight again</p></div>
-    <div id="consent" class="hidden">
-      <div class="card">
-        <h2>Skynet learns from you</h2>
-        <p>Skynet's attacks are chosen by a learning AI shared by every player. If you agree, the
-        situations Skynet saw in your fights (positions, movement, health, cooldowns) and how its
-        attacks turned out are sent anonymously to train it. No personal information is collected.</p>
-        <div class="buttons">
-          <button id="consent-yes">Fight &amp; help train Skynet</button>
-          <button id="consent-no" class="secondary">Just fight</button>
-        </div>
-      </div>
+    <div id="start">
+      <form class="card" id="start-form" novalidate>
+        <div class="kicker">RESISTANCE ENLISTMENT</div>
+        <h1>SKYNET ATTACK ONLINE</h1>
+        <p class="lede">Skynet is an AI that learns from every fight the community plays. Suit up.</p>
+        <label class="field"><span>CALLSIGN</span>
+          <input type="text" id="start-name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Resistance fighter" />
+        </label>
+        <fieldset class="field"><legend>ARMOR COLOR</legend><div class="swatches" id="start-colors"></div></fieldset>
+        <fieldset class="field"><legend>TRAINING DATA</legend>
+          <label class="choice"><input type="radio" name="consent" id="consent-yes" value="yes" /><span><b>Help train Skynet</b>The situations Skynet saw in your fights (positions, movement, health, cooldowns) and how its attacks turned out are sent anonymously to train the shared AI. No personal information.</span></label>
+          <label class="choice"><input type="radio" name="consent" id="consent-no" value="no" /><span><b>Just fight</b>Nothing from your fights is used for training.</span></label>
+        </fieldset>
+        <p class="fine">Your callsign and color only live in this browser tab. They are never sent or saved.</p>
+        <button type="submit" id="start-go" disabled>Choose a training option</button>
+      </form>
     </div>
     <div id="hud">
       <h1>SKYNET ATTACK ONLINE</h1>
